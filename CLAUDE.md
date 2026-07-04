@@ -1,0 +1,131 @@
+# Tulasi — AI-native 3D design (Tulasi.ai)
+
+Solo-founder project (Hafreed). Converts a photo of any physical object into an
+accurate, editable 3D model with real-world measurements. No 3D modeling skill
+required by the end user.
+
+Positioning: "Meshy makes it look right. Tulasi makes it FIT right."
+Competitors (Meshy, Tripo, Rodin, Backflip) commoditize mesh generation. Our
+moat is dimensional accuracy + parametric editing + AI assistance, not
+generation quality.
+
+## Signature features (across all phases)
+
+1. **Reference-object calibration** — photograph the object next to a credit
+   card (ISO 7810: 85.60 × 53.98 mm) or ₹10 coin (27 mm); OpenCV detects it,
+   computes mm-per-pixel, all dimensions become real-world accurate.
+2. **Smart dimension lock** — resizing one dimension preserves functional
+   constraints, not dumb uniform scaling.
+3. **Print-ready validation** — wall thickness (≥1.2mm FDM), overhangs (>45°
+   flagged), stability; plain-language report.
+4. **Object library** — every scan saved with real dimensions.
+5. **Context-aware AI assistant** — Claude API tool-use acting on the model
+   ("make this bracket fit a 32mm pipe").
+
+## Out of scope — never build, even if asked casually
+
+Haptic gloves/hardware, holograms, custom AI training, native mobile apps,
+realtime collaboration.
+
+## Stack
+
+- Backend: Python 3.11+, FastAPI (async, typed, pydantic everywhere)
+- Mesh generation: Meshy image-to-3D API (never build our own model)
+- Measurement: OpenCV; Parametric: CadQuery/trimesh
+- Frontend: React 18 + Vite + TypeScript (strict) + Tailwind + shadcn/ui, dark theme
+- 3D viewer: Three.js + @react-three/fiber + drei
+- Gestures (Phase 3): MediaPipe Hands (browser)
+- Assistant (Phase 4): Claude API tool use
+- DB/auth (Phase 5): Supabase; Hosting: Vercel + Railway/Render
+
+## Repo structure
+
+```
+Tulasi.ai/
+├── CLAUDE.md
+├── .claude/skills/            # meshy-pipeline, opencv-calibration, threejs-viewer, release-post
+├── frontend/
+│   └── src/{components,hooks,lib}/   # UploadZone, ModelViewer, DimensionPanel, ProgressStages, ErrorCard
+├── backend/
+│   ├── app/
+│   │   ├── main.py            # FastAPI, CORS for localhost:5173
+│   │   ├── routers/{generate.py, jobs.py, measure.py}
+│   │   ├── services/{meshy.py, calibrate.py, validate.py}
+│   │   └── models/            # pydantic schemas
+│   ├── tests/
+│   └── requirements.txt
+├── experiments/fixtures/      # cached Meshy responses + sample.glb
+├── .env.example
+└── .gitignore                 # .env, node_modules, __pycache__, backend/storage/
+```
+
+## Phased roadmap
+
+### >>> PHASE 1 (CURRENT, weeks 1–3): photo → model on screen
+
+- `POST /api/generate`: multipart image upload → Meshy image-to-3d → `202 {job_id}`
+- `GET /api/jobs/{id}` → `{status: pending|processing|succeeded|failed, stage, model_url, error}`
+- Frontend: UploadZone (drag-drop, jpg/png <10MB validation) → ProgressStages → ModelViewer (GLB, OrbitControls, studio lighting)
+- DONE = upload a mug photo, spin the 3D mug in the browser.
+
+### PHASE 2 (weeks 4–8): measurements & resize
+
+- `calibrate.py`: card detection (contours + approxPolyDP, aspect 1.586 ± 0.12,
+  confidence ≥0.6 else "not detected"); coin via HoughCircles; mm_per_px;
+  object bounding dims via minAreaRect; depth = min(w,h)*0.8 flagged
+  "depth_estimated"
+- DimensionPanel: W/H/D in mm, editable, aspect-lock ON by default;
+  "estimated" amber badge when no reference
+- DONE = photo next to card → dimensions within ~5% of ruler truth.
+
+### PHASE 3 (weeks 9–12): gestures
+
+MediaPipe: palm = orbit, pinch = zoom, two-hand stretch = resize. Optional
+toggle; mouse stays primary.
+
+### PHASE 4 (weeks 13–16): AI assistant
+
+Claude tool use: `set_dimensions`, `rotate_view`, `run_print_check`,
+`export_model`, `explain_object`. Object metadata in system context. Every
+action visibly updates the model.
+
+### PHASE 5 (weeks 17–20): platform
+
+Supabase auth + object library, STL/GLB/STEP export with validation report,
+landing page, error-state audit.
+
+## Meshy rules (critical — credits cost money)
+
+- All Meshy calls only in `backend/app/services/meshy.py`. Retry: 3 attempts,
+  backoff 1s/2s/4s, 5xx only.
+- `POST https://api.meshy.ai/openapi/v1/image-to-3d {image_url, enable_pbr:false}`
+  → task id; poll `GET .../{id}` every 5s server-side, 10-min timeout; on
+  `SUCCEEDED` download `model_urls.glb` to `backend/storage/` and serve it
+  ourselves (Meshy's signed URLs expire).
+- Stage mapping: progress `<50` "Analyzing photo", `≥50` "Building geometry",
+  `≥85` "Texturing".
+- **`MOCK_MESHY=1` env flag**: identical code path, fake job id, simulated
+  progress 20/55/90 then `SUCCEEDED` with `experiments/fixtures/sample.glb`.
+  Build all UI in mock mode. Cache real responses as fixtures.
+
+## Engineering conventions (strict)
+
+- Errors are product: every failure returns `{error_code, human_message,
+  suggested_action}`; no stack traces to UI; ErrorCard displays
+  `human_message`.
+- Honest progress: staged labels, never a bare spinner.
+- pytest for every service (mock HTTP with respx — never network in tests);
+  `calibrate.py` is test-first against fixture photos with `truth.json` (5%
+  flat-on, 8% angled tolerances — tune constants, never loosen assertions).
+- Types everywhere; shared API types mirrored in `frontend/src/lib/types.ts`.
+- Conventional commits (`feat:`/`fix:`/`test:`/`chore:`); commit after each
+  working increment; main always runnable. Plain commit messages, no AI
+  co-author trailer.
+- Secrets only via `.env`; keep `.env.example` current; never hardcode keys.
+- Boring proven libraries only; ask before adding anything beyond the stack
+  list. No premature abstraction.
+- Viewer: normalize GLB scale on load (Box3 → max dim 2 world units, keep
+  scale factor), dispose geometries/materials on unmount, `frameloop="demand"`,
+  `dpr [1,2]`.
+- UI: dark navy `#0B1120` base, teal `#2DD4BF` accents, coral `#FF7A50`
+  highlights, sentence-case labels.
