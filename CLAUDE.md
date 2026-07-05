@@ -95,13 +95,24 @@ gestures are off.
   `invalidate()` unconditionally every tick while mounted — gating it on
   "did anything change" stalls the render loop the first frame nothing moved.
 
-### >>> PHASE 4 (CURRENT, weeks 13–16): AI assistant
+### PHASE 4 (done, weeks 13–16): AI assistant
 
-Claude tool use: `set_dimensions`, `rotate_view`, `run_print_check`,
-`export_model`, `explain_object`. Object metadata in system context. Every
-action visibly updates the model.
+Claude tool use (`backend/app/services/assistant.py`, model `claude-opus-4-8`,
+manual tool loop capped at 5 iterations): `set_dimensions`, `rotate_view`,
+`run_print_check`, `export_model` (glb/stl via trimesh — STEP not supported,
+mesh→STEP isn't a meaningful conversion), `explain_object`. Actions returned
+to the frontend visibly update the model: dimensions merge into
+`DimensionPanel`'s state, `rotate_view` drives `ModelViewer`'s camera via an
+imperative handle, `export_ready` renders a download link in the chat.
+- `run_print_check` is a watertightness heuristic only — real wall-thickness
+  and overhang analysis isn't implemented (that's `services/validate.py`,
+  still a stub).
+- Not yet tested against the real Anthropic API — `ANTHROPIC_API_KEY` is
+  blank in `.env`, so live calls haven't been exercised. Tests mock the
+  Anthropic client entirely. Spending real credits needs the user to add a
+  real key and explicitly say so first.
 
-### PHASE 5 (weeks 17–20): platform
+### >>> PHASE 5 (CURRENT, weeks 17–20): platform
 
 Supabase auth + object library, STL/GLB/STEP export with validation report,
 landing page, error-state audit.

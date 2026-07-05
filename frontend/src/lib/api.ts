@@ -1,4 +1,10 @@
-import type { ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from '@/lib/types'
+import type {
+  AssistantResponse,
+  ErrorDetail,
+  GenerateAccepted,
+  JobRecord,
+  MeasurementResult,
+} from '@/lib/types'
 
 class ApiError extends Error {
   detail: ErrorDetail
@@ -49,6 +55,20 @@ export async function getJobStatus(jobId: string): Promise<JobRecord> {
 
 export async function getMeasurement(jobId: string): Promise<MeasurementResult> {
   const response = await fetch(`/api/jobs/${jobId}/measure`, { method: 'POST' })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.json()
+}
+
+export async function askAssistant(jobId: string, message: string): Promise<AssistantResponse> {
+  const response = await fetch(`/api/jobs/${jobId}/assistant`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)

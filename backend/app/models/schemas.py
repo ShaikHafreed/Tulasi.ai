@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -35,3 +36,17 @@ class MeasurementResult(BaseModel):
     height_mm: float | None = None
     depth_mm: float | None = None
     depth_estimated: bool = False
+
+
+class AssistantRequest(BaseModel):
+    message: str
+
+
+class AssistantAction(BaseModel):
+    type: str
+    payload: dict[str, Any]
+
+
+class AssistantResponse(BaseModel):
+    reply: str
+    actions: list[AssistantAction]

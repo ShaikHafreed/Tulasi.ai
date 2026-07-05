@@ -6,6 +6,7 @@ python-multipart
 trimesh
 opencv-python-headless
 numpy
+anthropic
 pytest
 pytest-asyncio
 respx

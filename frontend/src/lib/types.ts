@@ -26,3 +26,13 @@ export interface MeasurementResult {
   depth_mm: number | null
   depth_estimated: boolean
 }
+
+export interface AssistantAction {
+  type: string
+  payload: Record<string, unknown>
+}
+
+export interface AssistantResponse {
+  reply: string
+  actions: AssistantAction[]
+}

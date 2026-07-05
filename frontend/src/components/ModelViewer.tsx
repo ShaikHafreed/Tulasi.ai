@@ -1,4 +1,11 @@
-import { Suspense, useEffect, useRef, type RefObject } from 'react'
+import {
+  Suspense,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type RefObject,
+} from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Stage, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
@@ -8,6 +15,46 @@ interface OrbitControlsLike {
   object: THREE.Camera
   target: THREE.Vector3
   update: () => void
+}
+
+export interface ModelViewerHandle {
+  orbitBy: (yawDegrees: number, pitchDegrees: number) => void
+}
+
+// Bridges the assistant's rotate_view action into the R3F scene: it needs
+// useThree's invalidate() (only available inside the Canvas) to wake the
+// frameloop="demand" render loop after an imperative camera mutation.
+function ImperativeBridge({
+  apiRef,
+  controlsRef,
+}: {
+  apiRef: RefObject<ModelViewerHandle | null>
+  controlsRef: RefObject<OrbitControlsLike | null>
+}) {
+  const invalidate = useThree((state) => state.invalidate)
+
+  useEffect(() => {
+    apiRef.current = {
+      orbitBy: (yawDegrees, pitchDegrees) => {
+        const controls = controlsRef.current
+        if (!controls) return
+        const offset = controls.object.position.clone().sub(controls.target)
+        const spherical = new THREE.Spherical().setFromVector3(offset)
+        spherical.theta -= THREE.MathUtils.degToRad(yawDegrees)
+        spherical.phi = THREE.MathUtils.clamp(
+          spherical.phi - THREE.MathUtils.degToRad(pitchDegrees),
+          0.05,
+          Math.PI - 0.05,
+        )
+        offset.setFromSpherical(spherical)
+        controls.object.position.copy(controls.target).add(offset)
+        controls.update()
+        invalidate()
+      },
+    }
+  }, [apiRef, controlsRef, invalidate])
+
+  return null
 }
 
 function Model({ url }: { url: string }) {
@@ -90,15 +137,21 @@ function GestureController({
   return null
 }
 
-export default function ModelViewer({
-  modelUrl,
-  gestureRef,
-}: {
-  modelUrl: string
-  gestureRef?: RefObject<GestureState>
-}) {
+const ModelViewer = forwardRef<
+  ModelViewerHandle,
+  { modelUrl: string; gestureRef?: RefObject<GestureState> }
+>(function ModelViewer({ modelUrl, gestureRef }, ref) {
   const controlsRef = useRef<OrbitControlsLike | null>(null)
   const resizeGroupRef = useRef<THREE.Group>(null)
+  const apiRef = useRef<ModelViewerHandle | null>(null)
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      orbitBy: (yaw, pitch) => apiRef.current?.orbitBy(yaw, pitch),
+    }),
+    [],
+  )
 
   return (
     <Canvas
@@ -115,9 +168,12 @@ export default function ModelViewer({
         </group>
       </Suspense>
       <OrbitControls ref={controlsRef as never} makeDefault />
+      <ImperativeBridge apiRef={apiRef} controlsRef={controlsRef} />
       {gestureRef && (
         <GestureController gestureRef={gestureRef} controlsRef={controlsRef} resizeGroupRef={resizeGroupRef} />
       )}
     </Canvas>
   )
-}
+})
+
+export default ModelViewer

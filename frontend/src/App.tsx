@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import UploadZone from './components/UploadZone'
 import ProgressStages from './components/ProgressStages'
-import ModelViewer from './components/ModelViewer'
+import ModelViewer, { type ModelViewerHandle } from './components/ModelViewer'
 import DimensionPanel from './components/DimensionPanel'
+import AssistantChat from './components/AssistantChat'
 import ErrorCard from './components/ErrorCard'
 import { Button } from './components/ui/button'
 import { ApiError, getJobStatus, getMeasurement, uploadImage } from './lib/api'
 import { useHandGestures } from './hooks/useHandGestures'
-import type { ErrorDetail, JobRecord, MeasurementResult } from './lib/types'
+import type { AssistantAction, ErrorDetail, JobRecord, MeasurementResult } from './lib/types'
 
 type Phase = 'idle' | 'uploading' | 'job' | 'done'
 
@@ -27,6 +28,7 @@ function App() {
   const [error, setError] = useState<ErrorDetail | null>(null)
   const [gesturesEnabled, setGesturesEnabled] = useState(false)
   const pollHandle = useRef<number | null>(null)
+  const modelViewerRef = useRef<ModelViewerHandle>(null)
   const { gestureRef, error: gestureError } = useHandGestures(gesturesEnabled)
 
   useEffect(() => {
@@ -105,6 +107,18 @@ function App() {
     })
   }, [])
 
+  const handleAssistantActions = useCallback((actions: AssistantAction[]) => {
+    for (const action of actions) {
+      if (action.type === 'set_dimensions') {
+        setMeasurement((prev) => (prev ? { ...prev, ...action.payload } : prev))
+      } else if (action.type === 'rotate_view') {
+        const yaw = Number(action.payload.yaw_degrees ?? 0)
+        const pitch = Number(action.payload.pitch_degrees ?? 0)
+        modelViewerRef.current?.orbitBy(yaw, pitch)
+      }
+    }
+  }, [])
+
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-8 px-6 py-16">
       <div className="text-center">
@@ -127,7 +141,11 @@ function App() {
 
       {phase === 'done' && job?.model_url && (
         <div className="flex w-full flex-col gap-6">
-          <ModelViewer modelUrl={job.model_url} gestureRef={gesturesEnabled ? gestureRef : undefined} />
+          <ModelViewer
+            ref={modelViewerRef}
+            modelUrl={job.model_url}
+            gestureRef={gesturesEnabled ? gestureRef : undefined}
+          />
 
           <label className="flex items-center gap-2 self-center text-sm text-slate-400">
             <input
@@ -145,6 +163,7 @@ function App() {
           )}
 
           {measurement && <DimensionPanel measurement={measurement} />}
+          {jobId && <AssistantChat jobId={jobId} onActions={handleAssistantActions} />}
           <div className="flex justify-center">
             <Button variant="ghost" onClick={reset}>
               Scan another object
