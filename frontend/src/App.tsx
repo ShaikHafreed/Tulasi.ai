@@ -6,6 +6,7 @@ import DimensionPanel from './components/DimensionPanel'
 import ErrorCard from './components/ErrorCard'
 import { Button } from './components/ui/button'
 import { ApiError, getJobStatus, getMeasurement, uploadImage } from './lib/api'
+import { useHandGestures } from './hooks/useHandGestures'
 import type { ErrorDetail, JobRecord, MeasurementResult } from './lib/types'
 
 type Phase = 'idle' | 'uploading' | 'job' | 'done'
@@ -24,7 +25,9 @@ function App() {
   const [job, setJob] = useState<JobRecord | null>(null)
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
+  const [gesturesEnabled, setGesturesEnabled] = useState(false)
   const pollHandle = useRef<number | null>(null)
+  const { gestureRef, error: gestureError } = useHandGestures(gesturesEnabled)
 
   useEffect(() => {
     return () => {
@@ -124,7 +127,23 @@ function App() {
 
       {phase === 'done' && job?.model_url && (
         <div className="flex w-full flex-col gap-6">
-          <ModelViewer modelUrl={job.model_url} />
+          <ModelViewer modelUrl={job.model_url} gestureRef={gesturesEnabled ? gestureRef : undefined} />
+
+          <label className="flex items-center gap-2 self-center text-sm text-slate-400">
+            <input
+              type="checkbox"
+              checked={gesturesEnabled}
+              onChange={(event) => setGesturesEnabled(event.target.checked)}
+              className="size-4 rounded border-slate-700 bg-slate-800 accent-teal-400"
+            />
+            Use hand gestures (experimental) — palm to orbit, pinch to zoom, two hands to resize
+          </label>
+          {gesturesEnabled && gestureError && (
+            <p className="self-center text-xs text-amber-300">
+              Couldn't start hand tracking: {gestureError}. Mouse controls still work.
+            </p>
+          )}
+
           {measurement && <DimensionPanel measurement={measurement} />}
           <div className="flex justify-center">
             <Button variant="ghost" onClick={reset}>

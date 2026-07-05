@@ -68,7 +68,7 @@ Tulasi.ai/
 - Frontend: UploadZone (drag-drop, jpg/png <10MB validation) → ProgressStages → ModelViewer (GLB, OrbitControls, studio lighting)
 - DONE = upload a mug photo, spin the 3D mug in the browser.
 
-### >>> PHASE 2 (CURRENT, weeks 4–8): measurements & resize
+### PHASE 2 (done, weeks 4–8): measurements & resize
 
 - `calibrate.py`: card detection (contours + approxPolyDP, aspect 1.586 ± 0.12,
   confidence ≥0.6 else "not detected"); coin via HoughCircles; mm_per_px;
@@ -81,12 +81,21 @@ Tulasi.ai/
   (no camera/physical objects available) — real ruler-measured photos would
   tighten confidence in the 5%/8% tolerances.
 
-### PHASE 3 (weeks 9–12): gestures
+### PHASE 3 (done, weeks 9–12): gestures
 
-MediaPipe: palm = orbit, pinch = zoom, two-hand stretch = resize. Optional
-toggle; mouse stays primary.
+MediaPipe (`@mediapipe/tasks-vision` HandLandmarker): palm = orbit, pinch =
+zoom, two-hand stretch = resize. Optional toggle (`useHandGestures` hook,
+off by default); mouse/OrbitControls stays primary and fully unaffected when
+gestures are off.
+- Sensitivity multipliers (orbit ×4, zoom ×3, resize clamp 0.9–1.1) are
+  untested guesses — no webcam/browser available to tune them against real
+  hand movement. Needs real-device tuning pass.
+- `frameloop="demand"` note: gesture deltas arrive from an independent
+  `requestAnimationFrame` loop outside R3F, so `GestureController` must call
+  `invalidate()` unconditionally every tick while mounted — gating it on
+  "did anything change" stalls the render loop the first frame nothing moved.
 
-### PHASE 4 (weeks 13–16): AI assistant
+### >>> PHASE 4 (CURRENT, weeks 13–16): AI assistant
 
 Claude tool use: `set_dimensions`, `rotate_view`, `run_print_check`,
 `export_model`, `explain_object`. Object metadata in system context. Every
