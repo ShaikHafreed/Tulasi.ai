@@ -25,3 +25,13 @@ class JobRecord(BaseModel):
 
 class GenerateAccepted(BaseModel):
     job_id: str
+
+
+class MeasurementResult(BaseModel):
+    reference_detected: bool
+    reference_type: str | None = None
+    confidence: float | None = None
+    width_mm: float | None = None
+    height_mm: float | None = None
+    depth_mm: float | None = None
+    depth_estimated: bool = False

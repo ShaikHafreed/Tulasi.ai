@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import UploadZone from './components/UploadZone'
 import ProgressStages from './components/ProgressStages'
 import ModelViewer from './components/ModelViewer'
+import DimensionPanel from './components/DimensionPanel'
 import ErrorCard from './components/ErrorCard'
 import { Button } from './components/ui/button'
-import { ApiError, getJobStatus, uploadImage } from './lib/api'
-import type { ErrorDetail, JobRecord } from './lib/types'
+import { ApiError, getJobStatus, getMeasurement, uploadImage } from './lib/api'
+import type { ErrorDetail, JobRecord, MeasurementResult } from './lib/types'
 
 type Phase = 'idle' | 'uploading' | 'job' | 'done'
 
@@ -19,7 +20,9 @@ const UNKNOWN_ERROR: ErrorDetail = {
 
 function App() {
   const [phase, setPhase] = useState<Phase>('idle')
+  const [jobId, setJobId] = useState<string | null>(null)
   const [job, setJob] = useState<JobRecord | null>(null)
+  const [measurement, setMeasurement] = useState<MeasurementResult | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
   const pollHandle = useRef<number | null>(null)
 
@@ -32,22 +35,43 @@ function App() {
   const reset = useCallback(() => {
     if (pollHandle.current !== null) clearInterval(pollHandle.current)
     setPhase('idle')
+    setJobId(null)
     setJob(null)
+    setMeasurement(null)
     setError(null)
   }, [])
+
+  useEffect(() => {
+    if (phase !== 'done' || !jobId) return
+
+    let cancelled = false
+    getMeasurement(jobId)
+      .then((result) => {
+        if (!cancelled) setMeasurement(result)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [phase, jobId])
 
   const handleFileSelected = useCallback(async (file: File) => {
     setPhase('uploading')
     setError(null)
     setJob(null)
+    setMeasurement(null)
 
     try {
-      const { job_id: jobId } = await uploadImage(file)
+      const { job_id: newJobId } = await uploadImage(file)
+      setJobId(newJobId)
       setPhase('job')
 
       pollHandle.current = window.setInterval(async () => {
         try {
-          const record = await getJobStatus(jobId)
+          const record = await getJobStatus(newJobId)
           setJob(record)
 
           if (record.status === 'succeeded') {
@@ -99,9 +123,10 @@ function App() {
       {error && <ErrorCard error={error} onRetry={reset} />}
 
       {phase === 'done' && job?.model_url && (
-        <div className="w-full">
+        <div className="flex w-full flex-col gap-6">
           <ModelViewer modelUrl={job.model_url} />
-          <div className="mt-4 flex justify-center">
+          {measurement && <DimensionPanel measurement={measurement} />}
+          <div className="flex justify-center">
             <Button variant="ghost" onClick={reset}>
               Scan another object
             </Button>

@@ -13,6 +13,12 @@ router = APIRouter(prefix="/api", tags=["generate"])
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
 MAX_BYTES = 10 * 1024 * 1024
 
+EXTENSION_BY_CONTENT_TYPE = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+}
+
 _background_tasks: set[asyncio.Task] = set()
 
 
@@ -37,6 +43,10 @@ async def generate(image: UploadFile = File(...)) -> GenerateAccepted:
 
     job_id = uuid.uuid4().hex
     job_store.create(job_id)
+
+    meshy.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    extension = EXTENSION_BY_CONTENT_TYPE[image.content_type]
+    (meshy.STORAGE_DIR / f"{job_id}_photo.{extension}").write_bytes(image_bytes)
 
     task = asyncio.create_task(meshy.process_job(job_id, image_bytes, image.content_type))
     _background_tasks.add(task)

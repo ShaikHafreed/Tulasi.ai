@@ -16,3 +16,13 @@ export interface JobRecord {
 export interface GenerateAccepted {
   job_id: string
 }
+
+export interface MeasurementResult {
+  reference_detected: boolean
+  reference_type: 'card' | 'coin' | null
+  confidence: number | null
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  depth_estimated: boolean
+}

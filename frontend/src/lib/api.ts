@@ -1,4 +1,4 @@
-import type { ErrorDetail, GenerateAccepted, JobRecord } from '@/lib/types'
+import type { ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from '@/lib/types'
 
 class ApiError extends Error {
   detail: ErrorDetail
@@ -39,6 +39,16 @@ export async function uploadImage(file: File): Promise<GenerateAccepted> {
 
 export async function getJobStatus(jobId: string): Promise<JobRecord> {
   const response = await fetch(`/api/jobs/${jobId}`)
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.json()
+}
+
+export async function getMeasurement(jobId: string): Promise<MeasurementResult> {
+  const response = await fetch(`/api/jobs/${jobId}/measure`, { method: 'POST' })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)

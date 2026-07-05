@@ -4,6 +4,8 @@ httpx
 python-dotenv
 python-multipart
 trimesh
+opencv-python-headless
+numpy
 pytest
 pytest-asyncio
 respx

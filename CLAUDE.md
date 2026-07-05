@@ -61,14 +61,14 @@ Tulasi.ai/
 
 ## Phased roadmap
 
-### >>> PHASE 1 (CURRENT, weeks 1–3): photo → model on screen
+### PHASE 1 (done, weeks 1–3): photo → model on screen
 
 - `POST /api/generate`: multipart image upload → Meshy image-to-3d → `202 {job_id}`
 - `GET /api/jobs/{id}` → `{status: pending|processing|succeeded|failed, stage, model_url, error}`
 - Frontend: UploadZone (drag-drop, jpg/png <10MB validation) → ProgressStages → ModelViewer (GLB, OrbitControls, studio lighting)
 - DONE = upload a mug photo, spin the 3D mug in the browser.
 
-### PHASE 2 (weeks 4–8): measurements & resize
+### >>> PHASE 2 (CURRENT, weeks 4–8): measurements & resize
 
 - `calibrate.py`: card detection (contours + approxPolyDP, aspect 1.586 ± 0.12,
   confidence ≥0.6 else "not detected"); coin via HoughCircles; mm_per_px;
@@ -77,6 +77,9 @@ Tulasi.ai/
 - DimensionPanel: W/H/D in mm, editable, aspect-lock ON by default;
   "estimated" amber badge when no reference
 - DONE = photo next to card → dimensions within ~5% of ruler truth.
+- Real photo validation still needed: current tests use synthetic fixtures
+  (no camera/physical objects available) — real ruler-measured photos would
+  tighten confidence in the 5%/8% tolerances.
 
 ### PHASE 3 (weeks 9–12): gestures
 
@@ -118,9 +121,10 @@ landing page, error-state audit.
   `calibrate.py` is test-first against fixture photos with `truth.json` (5%
   flat-on, 8% angled tolerances — tune constants, never loosen assertions).
 - Types everywhere; shared API types mirrored in `frontend/src/lib/types.ts`.
-- Conventional commits (`feat:`/`fix:`/`test:`/`chore:`); commit after each
-  working increment; main always runnable. Plain commit messages, no AI
-  co-author trailer.
+- Conventional commits (`feat:`/`fix:`/`test:`/`chore:`), phase-scoped where
+  it applies (e.g. `feat(phase2): ...`); commit after each working increment
+  and push to `origin/main`; main always runnable. Plain commit messages, no
+  AI co-author trailer.
 - Secrets only via `.env`; keep `.env.example` current; never hardcode keys.
 - Boring proven libraries only; ask before adding anything beyond the stack
   list. No premature abstraction.
@@ -129,3 +133,29 @@ landing page, error-state audit.
   `dpr [1,2]`.
 - UI: dark navy `#0B1120` base, teal `#2DD4BF` accents, coral `#FF7A50`
   highlights, sentence-case labels.
+
+## Tooling directives
+
+- Before touching a file, check `.claude/skills/` for a matching skill and
+  load it first: `meshy-pipeline` for `meshy.py`/`generate.py`/`jobs.py`;
+  `opencv-calibration` for `calibrate.py`/`measure.py`; `threejs-viewer` for
+  `ModelViewer`/`DimensionPanel`/anything R3F. Load `release-post` (and draft
+  the post unprompted) whenever a phase/feature completes.
+- For library/API questions (Meshy params, drei API, MediaPipe syntax): web
+  search current docs, never guess from memory — APIs change.
+- Phase 5 (Supabase): use the Supabase MCP directly for tables/SQL/logs
+  instead of handing over manual SQL. Vercel MCP for deploy/build-log issues.
+  Figma MCP for pulling design context when a Figma link exists.
+- Standing behaviors, no need to ask permission each time: run tests after
+  every implementation and fix failures before moving on; run
+  lint/typecheck before every commit; when a bug involves an external
+  service, check its real response/logs before theorizing; self-review the
+  diff against these conventions before reporting done.
+- Don't web search things already answered in this file or in a skill. Don't
+  call the real Meshy API when `MOCK_MESHY=1` already covers it (credits
+  cost money) — use mock mode by default unless told otherwise. Don't add
+  new MCPs/dependencies without asking first.
+- Creating real external resources (a live Supabase project, spending real
+  Meshy/Anthropic API credits, anything with an account/cost footprint
+  outside this repo) always gets flagged and confirmed first, even during an
+  otherwise "keep going, don't stop" run.
