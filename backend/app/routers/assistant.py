@@ -1,3 +1,4 @@
+import anthropic
 from fastapi import APIRouter
 
 from ..errors import AppError
@@ -17,5 +18,12 @@ async def ask_assistant(job_id: str, body: AssistantRequest) -> AssistantRespons
             error_code="assistant_unavailable",
             human_message="The AI assistant isn't configured yet.",
             suggested_action="Add a real ANTHROPIC_API_KEY to backend/.env to enable it.",
+        ) from exc
+    except anthropic.AnthropicError as exc:
+        raise AppError(
+            status_code=502,
+            error_code="assistant_error",
+            human_message="The AI assistant couldn't process that request.",
+            suggested_action="Check the Anthropic account has API credit, then try again.",
         ) from exc
     return AssistantResponse(**result)

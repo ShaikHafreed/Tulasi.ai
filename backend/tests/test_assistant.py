@@ -2,6 +2,8 @@ import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
+import anthropic
+
 from app import object_state
 from app.services import assistant, meshy
 
@@ -149,3 +151,23 @@ def test_assistant_endpoint_returns_reply(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"reply": "Hello there.", "actions": []}
+
+
+def test_assistant_endpoint_returns_502_on_anthropic_error(client, monkeypatch):
+    # Covers real failures like an out-of-credit account, which surface as
+    # anthropic SDK exceptions, not RuntimeError.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    class ExplodingMessages:
+        def create(self, **kwargs):
+            raise anthropic.AnthropicError("credit balance too low")
+
+    class ExplodingClient:
+        messages = ExplodingMessages()
+
+    monkeypatch.setattr(assistant, "_client", lambda: ExplodingClient())
+
+    response = client.post("/api/jobs/some-job/assistant", json={"message": "hi"})
+
+    assert response.status_code == 502
+    assert response.json()["error_code"] == "assistant_error"
