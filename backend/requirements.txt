@@ -4,6 +4,7 @@ httpx
 python-dotenv
 python-multipart
 trimesh
+rtree
 opencv-python-headless
 numpy
 anthropic

@@ -10,7 +10,7 @@ import os
 import anthropic
 import trimesh
 
-from . import meshy
+from . import meshy, validate
 from .. import job_store, object_state
 
 MODEL = "claude-opus-4-8"
@@ -115,14 +115,13 @@ def _execute_run_print_check(job_id: str, tool_input: dict) -> tuple[str, dict |
         return "No model found for this job yet.", None
 
     mesh = trimesh.load(str(glb_path), force="mesh")
-    report = {
-        "watertight": bool(mesh.is_watertight),
-        "note": (
-            "Heuristic only: watertightness is a rough proxy for printability. "
-            "Wall-thickness and overhang analysis are not implemented yet."
-        ),
-    }
-    message = f"Watertight: {report['watertight']}. {report['note']}"
+    mm_per_unit = validate.estimate_mm_per_unit(mesh, job_id)
+    report = validate.validate_mesh(mesh, mm_per_unit)
+
+    if report["issues"]:
+        message = "Print check found issues: " + " ".join(report["issues"])
+    else:
+        message = "Looks printable: watertight, walls thick enough, no unsupported overhangs, stable base."
     return message, {"type": "print_check", "payload": report}
 
 
