@@ -31,3 +31,13 @@ def test_measure_returns_calibration_for_uploaded_photo(client, monkeypatch, tmp
     body = measure_response.json()
     assert body["reference_detected"] is True
     assert body["reference_type"] == "card"
+
+
+def test_measure_returns_502_for_corrupt_photo(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(meshy, "STORAGE_DIR", tmp_path)
+    (tmp_path / "bad-job_photo.png").write_bytes(b"not a real image")
+
+    response = client.post("/api/jobs/bad-job/measure")
+
+    assert response.status_code == 502
+    assert response.json()["error_code"] == "calibration_failed"

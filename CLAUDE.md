@@ -116,6 +116,20 @@ imperative handle, `export_ready` renders a download link in the chat.
 
 Supabase auth + object library, STL/GLB/STEP export with validation report,
 landing page, error-state audit.
+- Done: `services/validate.py` (wall thickness via ray-cast sampling,
+  overhang detection excluding the build-plate base, stability from
+  bounding-box aspect ratio), wired into the assistant's `run_print_check`;
+  hero/landing section on the app's idle state; error-audit pass added a
+  missing `calibration_failed` error path in `/measure` and a missing
+  Anthropic-error catch in `/assistant`.
+- Not done: Supabase auth + object library. Needs (a) the user's explicit
+  go-ahead to create a real cloud project — this is real external
+  infrastructure, not something to spin up unprompted — and (b) the
+  Supabase MCP reconnected (it disconnected mid-session).
+- Real Meshy/Anthropic accounts are both currently out of credit — Meshy
+  needs a paid plan for API access, Anthropic returned "credit balance too
+  low" on the one live smoke-test call made this session (which is how the
+  `assistant_error` gap above was actually found).
 
 ## Meshy rules (critical — credits cost money)
 

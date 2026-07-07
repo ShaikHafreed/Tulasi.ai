@@ -123,8 +123,42 @@ function App() {
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-8 px-6 py-16">
       <div className="text-center">
         <h1 className="text-3xl font-semibold text-slate-50">Tulasi.ai — photo to 3D</h1>
-        <p className="mt-2 text-sm text-slate-400">Upload a photo of any object and spin it in 3D.</p>
+        <p className="mt-2 text-base text-teal-300">
+          Meshy makes it look right. Tulasi makes it <span className="font-semibold">FIT</span> right.
+        </p>
+        <p className="mt-2 text-sm text-slate-400">
+          Upload a photo of any object and get an editable 3D model with real-world measurements —
+          no 3D modeling skill required.
+        </p>
       </div>
+
+      {phase === 'idle' && (
+        <dl className="grid w-full grid-cols-1 gap-4 text-left sm:grid-cols-2">
+          {[
+            {
+              title: 'Reference-object calibration',
+              body: 'Photograph the object next to a card or coin and every dimension becomes real-world accurate.',
+            },
+            {
+              title: 'Smart dimension lock',
+              body: 'Resizing one dimension preserves proportions instead of dumb uniform scaling.',
+            },
+            {
+              title: 'Print-ready validation',
+              body: 'Wall thickness, overhangs, and stability checked before you export.',
+            },
+            {
+              title: 'Context-aware AI assistant',
+              body: '"Make this bracket fit a 32mm pipe" — and watch the model update.',
+            },
+          ].map((feature) => (
+            <div key={feature.title} className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+              <dt className="text-sm font-medium text-slate-100">{feature.title}</dt>
+              <dd className="mt-1 text-xs text-slate-400">{feature.body}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
 
       {phase !== 'done' && (
         <UploadZone

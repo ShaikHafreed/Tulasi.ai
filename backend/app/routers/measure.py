@@ -23,5 +23,13 @@ async def measure_job(job_id: str) -> MeasurementResult:
             suggested_action="Upload the photo again to generate a new model.",
         )
 
-    result = calibrate.calibrate(photo_path.read_bytes())
+    try:
+        result = calibrate.calibrate(photo_path.read_bytes())
+    except ValueError as exc:
+        raise AppError(
+            status_code=502,
+            error_code="calibration_failed",
+            human_message="We couldn't read that photo to measure it.",
+            suggested_action="Try re-uploading the photo.",
+        ) from exc
     return MeasurementResult(**result)
