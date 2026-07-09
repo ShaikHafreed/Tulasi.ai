@@ -8,6 +8,7 @@ import AssistantChat from './components/AssistantChat'
 import AuthPanel from './components/AuthPanel'
 import ObjectLibrary, { SaveScanButton } from './components/ObjectLibrary'
 import ErrorCard from './components/ErrorCard'
+import DimensionLoader from './components/DimensionLoader'
 import { Button } from './components/ui/button'
 import { ApiError, getJobStatus, getMeasurement, uploadImage } from './lib/api'
 import { useHandGestures } from './hooks/useHandGestures'
@@ -32,6 +33,7 @@ function App() {
   const [error, setError] = useState<ErrorDetail | null>(null)
   const [gesturesEnabled, setGesturesEnabled] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
+  const [showLoader, setShowLoader] = useState(true)
   const pollHandle = useRef<number | null>(null)
   const modelViewerRef = useRef<ModelViewerHandle>(null)
   const { gestureRef, error: gestureError } = useHandGestures(gesturesEnabled)
@@ -135,16 +137,19 @@ function App() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-8 px-6 py-16">
+      {showLoader && <DimensionLoader onComplete={() => setShowLoader(false)} />}
+
       <div className="flex w-full justify-end">
         <AuthPanel session={session} />
       </div>
 
       <div className="text-center">
-        <h1 className="text-3xl font-semibold text-slate-50">Tulasi.ai — photo to 3D</h1>
+        <p className="font-data text-[11px] uppercase tracking-[0.35em] text-teal-400/70">±0.5mm accuracy</p>
+        <h1 className="mt-2 font-display text-4xl font-semibold text-slate-50">Tulasi.ai</h1>
         <p className="mt-2 text-base text-teal-300">
           Meshy makes it look right. Tulasi makes it <span className="font-semibold">FIT</span> right.
         </p>
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mx-auto mt-3 max-w-md text-sm text-slate-400">
           Upload a photo of any object and get an editable 3D model with real-world measurements —
           no 3D modeling skill required.
         </p>
@@ -170,8 +175,8 @@ function App() {
               body: '"Make this bracket fit a 32mm pipe" — and watch the model update.',
             },
           ].map((feature) => (
-            <div key={feature.title} className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-              <dt className="text-sm font-medium text-slate-100">{feature.title}</dt>
+            <div key={feature.title} className="viewfinder-card p-4">
+              <dt className="font-display text-sm font-medium text-slate-100">{feature.title}</dt>
               <dd className="mt-1 text-xs text-slate-400">{feature.body}</dd>
             </div>
           ))}
