@@ -116,7 +116,7 @@ imperative handle, `export_ready` renders a download link in the chat.
   Anthropic client entirely. Spending real credits needs the user to add a
   real key and explicitly say so first.
 
-### >>> PHASE 5 (CURRENT, weeks 17–20): platform
+### PHASE 5 (done, weeks 17–20): platform
 
 Supabase auth + object library, STL/GLB/STEP export with validation report,
 landing page, error-state audit.
@@ -124,12 +124,27 @@ landing page, error-state audit.
   overhang detection excluding the build-plate base, stability from
   bounding-box aspect ratio), wired into the assistant's `run_print_check`;
   hero/landing section on the app's idle state; error-audit pass added a
-  missing `calibration_failed` error path in `/measure` and a missing
-  Anthropic-error catch in `/assistant`.
-- Not done: Supabase auth + object library. Needs (a) the user's explicit
-  go-ahead to create a real cloud project — this is real external
-  infrastructure, not something to spin up unprompted — and (b) the
-  Supabase MCP reconnected (it disconnected mid-session).
+  missing `calibration_failed` error path in `/measure`, a missing
+  Anthropic-error catch in `/assistant`, and a global FastAPI exception
+  handler (`main.py`) so any unanticipated exception still returns the
+  `{error_code, human_message, suggested_action}` contract instead of a raw
+  500 — found via a real corrupt-GLB case in `run_print_check`.
+- Supabase project `tulasi-ai` (`ap-south-1`, ref `hovcinzmiwwmugvxbirf`)
+  created with the user's explicit go-ahead. Schema: `public.scans`
+  (user_id references auth.users, job_id, model_url, width/height/depth_mm,
+  depth_estimated, created_at), RLS enabled, policies scope select/insert/
+  delete to `auth.uid() = user_id`. Verified via direct REST calls:
+  anonymous SELECT returns `[]`, anonymous INSERT rejected with a 401 RLS
+  violation. `AuthPanel` (email/password) and `ObjectLibrary`
+  (`SaveScanButton` + list) wired into `App.tsx`, keyed off Supabase
+  session state. Config in `frontend/.env` (gitignored) — publishable key
+  is safe client-side, scoped by RLS.
+- Not verified: the full authenticated save/list flow through a real
+  browser — Supabase's default email-confirmation requirement meant a
+  session couldn't be obtained via scripted signup (no inbox access), so
+  only the anonymous-access RLS boundary was directly tested.
+- STEP export intentionally out of scope — mesh→STEP isn't a meaningful
+  conversion without a full CAD/B-rep reconstruction step.
 - Meshy is resolved: real API key configured, real generation verified
   end-to-end. Anthropic is still blocked — the account returned "credit
   balance too low" on the one live smoke-test call made this session (which
