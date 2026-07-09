@@ -67,6 +67,10 @@ Tulasi.ai/
 - `GET /api/jobs/{id}` → `{status: pending|processing|succeeded|failed, stage, model_url, error}`
 - Frontend: UploadZone (drag-drop, jpg/png <10MB validation) → ProgressStages → ModelViewer (GLB, OrbitControls, studio lighting)
 - DONE = upload a mug photo, spin the 3D mug in the browser.
+- Verified against the real Meshy API (not just `MOCK_MESHY`): real task
+  creation, server-side polling through Analyzing/Building/Texturing, and a
+  real downloaded GLB served from `/storage/`. `MOCK_MESHY` is kept `1` in
+  `.env` day-to-day so routine dev work doesn't spend real credits.
 
 ### PHASE 2 (done, weeks 4–8): measurements & resize
 
@@ -126,10 +130,11 @@ landing page, error-state audit.
   go-ahead to create a real cloud project — this is real external
   infrastructure, not something to spin up unprompted — and (b) the
   Supabase MCP reconnected (it disconnected mid-session).
-- Real Meshy/Anthropic accounts are both currently out of credit — Meshy
-  needs a paid plan for API access, Anthropic returned "credit balance too
-  low" on the one live smoke-test call made this session (which is how the
-  `assistant_error` gap above was actually found).
+- Meshy is resolved: real API key configured, real generation verified
+  end-to-end. Anthropic is still blocked — the account returned "credit
+  balance too low" on the one live smoke-test call made this session (which
+  is how the `assistant_error` gap above was actually found); needs the
+  user to add credit before the assistant can be tested live.
 
 ## Meshy rules (critical — credits cost money)
 
