@@ -171,3 +171,22 @@ def test_assistant_endpoint_returns_502_on_anthropic_error(client, monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["error_code"] == "assistant_error"
+
+
+def test_assistant_endpoint_returns_error_contract_on_unanticipated_exception(
+    client_as_deployed, monkeypatch, tmp_path
+):
+    # A corrupt GLB makes trimesh.load raise something that isn't RuntimeError
+    # or an anthropic error — this should still hit the product error
+    # contract via main.py's global handler, not leak a raw 500.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(meshy, "STORAGE_DIR", tmp_path)
+    (tmp_path / "bad-job.glb").write_bytes(b"not a real glb")
+
+    fake_client = FakeClient([_tool_use_response("run_print_check", {})])
+    monkeypatch.setattr(assistant, "_client", lambda: fake_client)
+
+    response = client_as_deployed.post("/api/jobs/bad-job/assistant", json={"message": "can this print?"})
+
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "internal_error"

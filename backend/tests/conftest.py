@@ -18,5 +18,14 @@ def client():
 
 
 @pytest.fixture
+def client_as_deployed():
+    # Unlike `client`, doesn't re-raise unhandled exceptions for debugging —
+    # simulates what a real deployed server actually returns, for testing
+    # the global fallback exception handler itself.
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        yield test_client
+
+
+@pytest.fixture
 def sample_image_bytes() -> bytes:
     return SAMPLE_PNG
