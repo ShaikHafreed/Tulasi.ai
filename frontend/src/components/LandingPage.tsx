@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
 import AuthCard from './AuthCard'
-import { supabase } from '../lib/supabase'
 
 const READINGS = [
   'COFFEE MUG      84.2 × 92.0 × 84.2 mm',
@@ -120,21 +118,11 @@ function CalibrationReadout() {
 
 export default function LandingPage() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const [session, setSession] = useState<Session | null>(null)
   const [authMode, setAuthMode] = useState<'sign_in' | 'sign_up' | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
-
-  useEffect(() => {
-    if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
-    return () => subscription.subscription.unsubscribe()
-  }, [])
 
   return (
     <>
@@ -144,23 +132,12 @@ export default function LandingPage() {
           TULASI.AI
         </div>
         <div className="nav-actions">
-          {session ? (
-            <div className="nav-user">
-              <span>{session.user.email}</span>
-              <button type="button" className="nav-link" onClick={() => supabase?.auth.signOut()}>
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <>
-              <button type="button" className="nav-link" onClick={() => setAuthMode('sign_in')}>
-                Sign in
-              </button>
-              <button type="button" className="nav-link primary" onClick={() => setAuthMode('sign_up')}>
-                Sign up
-              </button>
-            </>
-          )}
+          <button type="button" className="nav-link" onClick={() => setAuthMode('sign_in')}>
+            Sign in
+          </button>
+          <button type="button" className="nav-link primary" onClick={() => setAuthMode('sign_up')}>
+            Sign up
+          </button>
           <button
             type="button"
             className="theme-toggle"
