@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import UploadZone from './components/UploadZone'
 import ProgressStages from './components/ProgressStages'
 import ModelViewer, { type ModelViewerHandle } from './components/ModelViewer'
 import DimensionPanel from './components/DimensionPanel'
 import AssistantChat from './components/AssistantChat'
+import AuthPanel from './components/AuthPanel'
+import ObjectLibrary, { SaveScanButton } from './components/ObjectLibrary'
 import ErrorCard from './components/ErrorCard'
 import { Button } from './components/ui/button'
 import { ApiError, getJobStatus, getMeasurement, uploadImage } from './lib/api'
 import { useHandGestures } from './hooks/useHandGestures'
+import { supabase } from './lib/supabase'
 import type { AssistantAction, ErrorDetail, JobRecord, MeasurementResult } from './lib/types'
 
 type Phase = 'idle' | 'uploading' | 'job' | 'done'
@@ -27,6 +31,7 @@ function App() {
   const [measurement, setMeasurement] = useState<MeasurementResult | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
   const [gesturesEnabled, setGesturesEnabled] = useState(false)
+  const [session, setSession] = useState<Session | null>(null)
   const pollHandle = useRef<number | null>(null)
   const modelViewerRef = useRef<ModelViewerHandle>(null)
   const { gestureRef, error: gestureError } = useHandGestures(gesturesEnabled)
@@ -35,6 +40,15 @@ function App() {
     return () => {
       if (pollHandle.current !== null) clearInterval(pollHandle.current)
     }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+    })
+    return () => subscription.subscription.unsubscribe()
   }, [])
 
   const reset = useCallback(() => {
@@ -121,6 +135,10 @@ function App() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-8 px-6 py-16">
+      <div className="flex w-full justify-end">
+        <AuthPanel session={session} />
+      </div>
+
       <div className="text-center">
         <h1 className="text-3xl font-semibold text-slate-50">Tulasi.ai — photo to 3D</h1>
         <p className="mt-2 text-base text-teal-300">
@@ -168,6 +186,8 @@ function App() {
         />
       )}
 
+      {phase === 'idle' && <ObjectLibrary session={session} />}
+
       {phase === 'uploading' && !job && <p className="text-sm text-slate-400">Uploading photo…</p>}
       {phase === 'job' && job && <ProgressStages job={job} />}
 
@@ -197,6 +217,9 @@ function App() {
           )}
 
           {measurement && <DimensionPanel measurement={measurement} />}
+          {jobId && (
+            <SaveScanButton session={session} jobId={jobId} modelUrl={job.model_url} measurement={measurement} />
+          )}
           {jobId && <AssistantChat jobId={jobId} onActions={handleAssistantActions} />}
           <div className="flex justify-center">
             <Button variant="ghost" onClick={reset}>
