@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png']
-const MAX_BYTES = 10 * 1024 * 1024
+const MAX_BYTES = 100 * 1024 * 1024
 
 export default function UploadZone({
   onFileSelected,
@@ -25,7 +25,7 @@ export default function UploadZone({
         return
       }
       if (file.size > MAX_BYTES) {
-        onValidationError('That photo is too large — keep it under 10MB.')
+        onValidationError('That photo is too large — keep it under 100MB.')
         return
       }
       onFileSelected(file)
@@ -62,7 +62,7 @@ export default function UploadZone({
         className="hidden"
         onChange={(event) => validateAndSelect(event.target.files?.[0])}
       />
-      <p className="text-xs text-muted-foreground">JPEG or PNG, under 10MB</p>
+      <p className="text-xs text-muted-foreground">JPEG or PNG, under 100MB</p>
     </div>
   )
 }

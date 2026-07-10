@@ -11,7 +11,7 @@ from ..services import meshy
 router = APIRouter(prefix="/api", tags=["generate"])
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
-MAX_BYTES = 10 * 1024 * 1024
+MAX_BYTES = 100 * 1024 * 1024
 
 _background_tasks: set[asyncio.Task] = set()
 
@@ -41,7 +41,7 @@ async def generate(
             status_code=400,
             error_code="file_too_large",
             human_message="That photo is too large.",
-            suggested_action="Upload a photo under 10MB.",
+            suggested_action="Upload a photo under 100MB.",
         )
 
     job_id = uuid.uuid4().hex
