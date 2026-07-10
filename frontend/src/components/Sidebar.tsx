@@ -1,4 +1,4 @@
-import { Camera, House, Layers, PanelLeft, Search, Settings } from 'lucide-react'
+import { Camera, House, Layers, Search, Settings } from 'lucide-react'
 
 export type DashboardView = 'dashboard' | 'scan' | 'library' | 'settings'
 
@@ -10,58 +10,44 @@ const NAV_ITEMS: { id: DashboardView; label: string; icon: typeof House }[] = [
 ]
 
 export default function Sidebar({
-  collapsed,
-  onToggleCollapsed,
   activeView,
   onSelectView,
   theme,
   onToggleTheme,
 }: {
-  collapsed: boolean
-  onToggleCollapsed: () => void
   activeView: DashboardView
   onSelectView: (view: DashboardView) => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
 }) {
   return (
-    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
-      <div className="sidebar-inner">
-        <header className="sidebar-header">
-          <div className="brand">
-            <span className="dot" />
-            {!collapsed && 'TULASI.AI'}
-          </div>
-          <button type="button" className="collapse-btn" onClick={onToggleCollapsed} aria-label="Toggle sidebar">
-            <PanelLeft size={17} />
-          </button>
-        </header>
+    <header className="topbar">
+      <div className="topbar-inner">
+        <div className="brand">
+          <span className="dot" />
+          TULASI.AI
+        </div>
 
-        {!collapsed && (
-          <div className="sidebar-search">
-            <Search size={15} />
+        <nav className="topbar-nav">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={activeView === id ? 'active' : ''}
+              onClick={() => onSelectView(id)}
+            >
+              <Icon size={16} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="topbar-actions">
+          <div className="topbar-search">
+            <Search size={14} />
             <input type="text" placeholder="Search" />
             <span className="kbd">/</span>
           </div>
-        )}
-
-        <ul className="sidebar-nav">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <li key={id}>
-              <button
-                type="button"
-                className={activeView === id ? 'active' : ''}
-                onClick={() => onSelectView(id)}
-                title={collapsed ? label : undefined}
-              >
-                <Icon size={17} />
-                {!collapsed && <span>{label}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <div className="sidebar-theme">
           <button
             type="button"
             className={`sidebar-switch${theme === 'dark' ? ' on' : ''}`}
@@ -70,9 +56,8 @@ export default function Sidebar({
           >
             <span />
           </button>
-          {!collapsed && <span style={{ fontSize: 11 }}>{theme === 'dark' ? 'Night' : 'Day'}</span>}
         </div>
       </div>
-    </aside>
+    </header>
   )
 }

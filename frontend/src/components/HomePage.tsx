@@ -92,7 +92,6 @@ function SettingsView({ session, onSignOut }: { session: Session; onSignOut: () 
 }
 
 export default function HomePage({ session }: { session: Session }) {
-  const [collapsed, setCollapsed] = useState(false)
   const [view, setView] = useState<DashboardView>('dashboard')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [scans, setScans] = useState<Scan[]>([])
@@ -118,14 +117,12 @@ export default function HomePage({ session }: { session: Session }) {
   return (
     <div className="app-shell">
       <Sidebar
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
         activeView={view}
         onSelectView={setView}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
-      <main className={`main-content${collapsed ? ' collapsed' : ''}`}>
+      <main className="main-content">
         {view === 'dashboard' && <DashboardHome session={session} scanCount={scansLoading ? null : scans.length} />}
         {view === 'library' && <LibraryView scans={scans} loading={scansLoading} />}
         {view === 'scan' && <ScanView />}
