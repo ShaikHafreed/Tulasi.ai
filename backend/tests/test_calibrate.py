@@ -111,3 +111,49 @@ def test_depth_is_always_estimated_as_ratio_of_smaller_dimension():
 def test_unreadable_image_raises_value_error():
     with pytest.raises(ValueError):
         calibrate.measure(b"not an image")
+
+
+def _draw_spoked_disc(canvas: np.ndarray, center, radius: int) -> None:
+    """A busy circular region — stands in for a car wheel/headlight ring:
+    a clean circular outline (so Hough still finds it at this geometry) but
+    a visually busy interior (spokes), unlike a flat coin."""
+    cv2.circle(canvas, center, radius, (150, 150, 150), -1)
+    for angle in range(0, 360, 45):
+        theta = np.radians(angle)
+        edge = (int(center[0] + radius * np.cos(theta)), int(center[1] + radius * np.sin(theta)))
+        cv2.line(canvas, center, edge, (20, 20, 20), 5)
+
+
+def test_busy_circular_feature_is_not_mistaken_for_a_coin():
+    """Regression test: a real photo of a car returned bogus millimeter
+    dimensions because a wheel got confidently misdetected as a coin."""
+    canvas = _blank_canvas()
+    _draw_spoked_disc(canvas, (150, 300), 60)
+    _draw_rect(canvas, center=(560, 260), size=(300, 200), color=(120, 160, 200))
+
+    result = calibrate.measure(_encode_png(canvas))
+
+    assert result.reference_type.value == "none"
+    assert result.width_mm is None
+
+
+def test_implausibly_large_measurement_is_reported_as_no_reference():
+    """Even if a reference technically passes detection, a resulting size
+    outside Tulasi's small-object domain (meters, not mm) is more likely a
+    misdetection than a real product — report honestly, not confidently."""
+    canvas = _blank_canvas(w=2000, h=1500)
+    card_px = (120, 76)  # small card, far from camera, still above the noise-area floor
+    mm_per_px = CARD_REAL_W_MM / card_px[0]
+    _draw_rect(canvas, center=(150, 1370), size=card_px, color=(255, 255, 255))
+
+    # A huge object (ratio 2.0, well outside the card tolerance band so it
+    # can't be self-referenced) relative to the card implies an implausible
+    # real-world size.
+    object_px = (1600, 800)
+    _draw_rect(canvas, center=(1100, 650), size=object_px, color=(120, 160, 200))
+    assert object_px[0] * mm_per_px > calibrate.MAX_PLAUSIBLE_OBJECT_MM
+
+    result = calibrate.measure(_encode_png(canvas))
+
+    assert result.reference_type.value == "none"
+    assert result.width_mm is None
