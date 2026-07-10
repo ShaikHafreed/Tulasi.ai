@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+python-multipart
+trimesh
+supabase
+pytest
+pytest-asyncio
+respx

@@ -1,10 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import Sidebar, { type DashboardView } from './Sidebar'
+import UploadZone from './scan/UploadZone'
+import ProgressStages from './scan/ProgressStages'
+import ModelViewer from './scan/ModelViewer'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ApiError, getJobStatus, uploadImage } from '@/lib/api'
 import { supabase } from '../lib/supabase'
-import type { Scan } from '../lib/types'
+import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
+
+const POLL_INTERVAL_MS = 1500
+
+const UNKNOWN_ERROR: ErrorDetail = {
+  error_code: 'unknown_error',
+  human_message: 'Lost connection to the server.',
+  suggested_action: 'Check the backend is running and try again.',
+}
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">{children}</p>
@@ -26,7 +38,15 @@ function EmptyCard({ title, body, children }: { title: string; body: string; chi
   )
 }
 
-function DashboardHome({ session, scanCount }: { session: Session; scanCount: number | null }) {
+function DashboardHome({
+  session,
+  scanCount,
+  onGoToScan,
+}: {
+  session: Session
+  scanCount: number | null
+  onGoToScan: () => void
+}) {
   const name = session.user.user_metadata?.name ?? session.user.email
   return (
     <>
@@ -42,7 +62,7 @@ function DashboardHome({ session, scanCount }: { session: Session; scanCount: nu
         title="Ready to measure something?"
         body="Photograph an object next to a coin or card and Tulasi calibrates it to real-world millimeters."
       >
-        <Button variant="warm" className="mt-1 w-fit">
+        <Button variant="warm" className="mt-1 w-fit" onClick={onGoToScan}>
           Scan your first object
         </Button>
       </EmptyCard>
@@ -83,15 +103,96 @@ function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
   )
 }
 
-function ScanView() {
+function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
+  const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
+  const [job, setJob] = useState<JobRecord | null>(null)
+  const [error, setError] = useState<ErrorDetail | null>(null)
+  const pollHandle = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollHandle.current !== null) clearInterval(pollHandle.current)
+    }
+  }, [])
+
+  const reset = useCallback(() => {
+    if (pollHandle.current !== null) clearInterval(pollHandle.current)
+    setPhase('idle')
+    setJob(null)
+    setError(null)
+  }, [])
+
+  const handleFileSelected = useCallback(
+    async (file: File) => {
+      setPhase('uploading')
+      setError(null)
+      setJob(null)
+
+      try {
+        const { job_id: jobId } = await uploadImage(file)
+        setPhase('job')
+
+        pollHandle.current = window.setInterval(async () => {
+          try {
+            const record = await getJobStatus(jobId)
+            setJob(record)
+
+            if (record.status === 'succeeded') {
+              clearInterval(pollHandle.current!)
+              setPhase('done')
+              onScanSaved()
+            } else if (record.status === 'failed') {
+              clearInterval(pollHandle.current!)
+              setError(record.error ?? UNKNOWN_ERROR)
+              setPhase('idle')
+            }
+          } catch (err) {
+            clearInterval(pollHandle.current!)
+            setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
+            setPhase('idle')
+          }
+        }, POLL_INTERVAL_MS)
+      } catch (err) {
+        setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
+        setPhase('idle')
+      }
+    },
+    [onScanSaved],
+  )
+
   return (
     <>
       <Eyebrow>New scan</Eyebrow>
       <PageTitle>Upload a photo</PageTitle>
-      <EmptyCard
-        title="Scan pipeline coming next"
-        body="The upload → calibrate → 3D model flow is being rebuilt in this fresh version — not wired up yet."
-      />
+
+      {phase !== 'done' && (
+        <UploadZone
+          onFileSelected={handleFileSelected}
+          onValidationError={(message) =>
+            setError({ error_code: 'client_validation', human_message: message, suggested_action: 'Choose a different photo.' })
+          }
+          disabled={phase === 'uploading' || phase === 'job'}
+        />
+      )}
+
+      {phase === 'job' && job && <div className="mt-6"><ProgressStages job={job} /></div>}
+
+      {error && (
+        <Card className="mt-6 max-w-md gap-2 border-brand-coral/40 bg-brand-coral/5 p-6">
+          <p className="font-semibold text-brand-coral">Something went wrong</p>
+          <p className="text-sm text-muted-foreground">{error.human_message}</p>
+          <p className="text-xs text-muted-foreground">{error.suggested_action}</p>
+        </Card>
+      )}
+
+      {phase === 'done' && job?.model_url && (
+        <div className="mt-6 flex max-w-xl flex-col gap-4">
+          <ModelViewer modelUrl={job.model_url} />
+          <Button variant="ghost" className="w-fit" onClick={reset}>
+            Scan another object
+          </Button>
+        </div>
+      )}
     </>
   )
 }
@@ -120,7 +221,7 @@ export default function HomePage({ session }: { session: Session }) {
     document.documentElement.classList.toggle('light', theme === 'light')
   }, [theme])
 
-  useEffect(() => {
+  const refreshScans = useCallback(() => {
     if (!supabase) return
     setScansLoading(true)
     supabase
@@ -133,6 +234,10 @@ export default function HomePage({ session }: { session: Session }) {
       })
   }, [])
 
+  useEffect(() => {
+    refreshScans()
+  }, [refreshScans])
+
   return (
     <div className="min-h-screen">
       <Sidebar
@@ -142,9 +247,15 @@ export default function HomePage({ session }: { session: Session }) {
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
       <main className="mx-auto max-w-[900px] px-10 pt-27 pb-12">
-        {view === 'dashboard' && <DashboardHome session={session} scanCount={scansLoading ? null : scans.length} />}
+        {view === 'dashboard' && (
+          <DashboardHome
+            session={session}
+            scanCount={scansLoading ? null : scans.length}
+            onGoToScan={() => setView('scan')}
+          />
+        )}
         {view === 'library' && <LibraryView scans={scans} loading={scansLoading} />}
-        {view === 'scan' && <ScanView />}
+        {view === 'scan' && <ScanView onScanSaved={refreshScans} />}
         {view === 'settings' && <SettingsView session={session} onSignOut={() => supabase?.auth.signOut()} />}
       </main>
     </div>
