@@ -160,8 +160,17 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
     if access_token:
         record = job_store.get(job_id)
         if record and record.model_url:
+            dimensions = record.dimensions
             try:
-                supabase_client.insert_scan(access_token, job_id=job_id, model_url=record.model_url)
+                supabase_client.insert_scan(
+                    access_token,
+                    job_id=job_id,
+                    model_url=record.model_url,
+                    width_mm=dimensions.width_mm if dimensions else None,
+                    height_mm=dimensions.height_mm if dimensions else None,
+                    depth_mm=dimensions.depth_mm if dimensions else None,
+                    depth_estimated=dimensions.depth_estimated if dimensions else True,
+                )
             except Exception:
                 # Scan-history write failing shouldn't hide a model that generated fine.
                 pass

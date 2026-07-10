@@ -29,9 +29,26 @@ def _client_as(access_token: str) -> Client:
     return client
 
 
-def insert_scan(access_token: str, *, job_id: str, model_url: str) -> None:
+def insert_scan(
+    access_token: str,
+    *,
+    job_id: str,
+    model_url: str,
+    width_mm: float | None = None,
+    height_mm: float | None = None,
+    depth_mm: float | None = None,
+    depth_estimated: bool = False,
+) -> None:
     client = _client_as(access_token)
     user_id = _decode_user_id(access_token)
     client.table("scans").insert(
-        {"user_id": user_id, "job_id": job_id, "model_url": model_url}
+        {
+            "user_id": user_id,
+            "job_id": job_id,
+            "model_url": model_url,
+            "width_mm": width_mm,
+            "height_mm": height_mm,
+            "depth_mm": depth_mm,
+            "depth_estimated": depth_estimated,
+        }
     ).execute()

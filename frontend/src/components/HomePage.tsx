@@ -4,6 +4,7 @@ import Sidebar, { type DashboardView } from './Sidebar'
 import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
 import ModelViewer from './scan/ModelViewer'
+import DimensionPanel, { type Dimensions } from './scan/DimensionPanel'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ApiError, getJobStatus, uploadImage } from '@/lib/api'
@@ -107,7 +108,9 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
   const [job, setJob] = useState<JobRecord | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
+  const [liveDims, setLiveDims] = useState<Dimensions | null>(null)
   const pollHandle = useRef<number | null>(null)
+  const baselineMaxMm = useRef<number | null>(null)
 
   useEffect(() => {
     return () => {
@@ -115,11 +118,20 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     }
   }, [])
 
+  useEffect(() => {
+    if (baselineMaxMm.current === null && job?.dimensions) {
+      const { width_mm, height_mm, depth_mm } = job.dimensions
+      baselineMaxMm.current = Math.max(width_mm ?? 0, height_mm ?? 0, depth_mm ?? 0) || null
+    }
+  }, [job?.dimensions])
+
   const reset = useCallback(() => {
     if (pollHandle.current !== null) clearInterval(pollHandle.current)
     setPhase('idle')
     setJob(null)
     setError(null)
+    setLiveDims(null)
+    baselineMaxMm.current = null
   }, [])
 
   const handleFileSelected = useCallback(
@@ -127,6 +139,8 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       setPhase('uploading')
       setError(null)
       setJob(null)
+      setLiveDims(null)
+      baselineMaxMm.current = null
 
       try {
         const { job_id: jobId } = await uploadImage(file)
@@ -177,6 +191,12 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
 
       {phase === 'job' && job && <div className="mt-6"><ProgressStages job={job} /></div>}
 
+      {(phase === 'job' || phase === 'done') && job?.dimensions && (
+        <div className="mt-6">
+          <DimensionPanel measurement={job.dimensions} onChange={setLiveDims} />
+        </div>
+      )}
+
       {error && (
         <Card className="mt-6 max-w-md gap-2 border-brand-coral/40 bg-brand-coral/5 p-6">
           <p className="font-semibold text-brand-coral">Something went wrong</p>
@@ -187,7 +207,14 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
 
       {phase === 'done' && job?.model_url && (
         <div className="mt-6 flex max-w-xl flex-col gap-4">
-          <ModelViewer modelUrl={job.model_url} />
+          <ModelViewer
+            modelUrl={job.model_url}
+            scale={
+              liveDims && baselineMaxMm.current
+                ? Math.max(liveDims.width_mm, liveDims.height_mm, liveDims.depth_mm) / baselineMaxMm.current
+                : 1
+            }
+          />
           <Button variant="ghost" className="w-fit" onClick={reset}>
             Scan another object
           </Button>

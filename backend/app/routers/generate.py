@@ -4,14 +4,11 @@ import uuid
 from fastapi import APIRouter, File, Header, UploadFile
 
 from .. import job_store
-from ..errors import AppError
 from ..models.schemas import GenerateAccepted
-from ..services import meshy
+from ..services import calibrate, meshy
+from ..services.uploads import validate_content_type, validate_size
 
 router = APIRouter(prefix="/api", tags=["generate"])
-
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png"}
-MAX_BYTES = 100 * 1024 * 1024
 
 _background_tasks: set[asyncio.Task] = set()
 
@@ -27,25 +24,18 @@ async def generate(
     image: UploadFile = File(...),
     authorization: str | None = Header(default=None),
 ) -> GenerateAccepted:
-    if image.content_type not in ALLOWED_CONTENT_TYPES:
-        raise AppError(
-            status_code=400,
-            error_code="unsupported_file_type",
-            human_message="Only JPEG or PNG photos are supported.",
-            suggested_action="Upload a .jpg or .png photo of the object.",
-        )
-
+    validate_content_type(image.content_type)
     image_bytes = await image.read()
-    if len(image_bytes) > MAX_BYTES:
-        raise AppError(
-            status_code=400,
-            error_code="file_too_large",
-            human_message="That photo is too large.",
-            suggested_action="Upload a photo under 100MB.",
-        )
+    validate_size(len(image_bytes))
 
     job_id = uuid.uuid4().hex
     job_store.create(job_id)
+
+    try:
+        dimensions = await asyncio.to_thread(calibrate.measure, image_bytes)
+        job_store.update(job_id, dimensions=dimensions)
+    except ValueError:
+        pass  # unreadable image for CV purposes — Meshy may still handle it
 
     access_token = _bearer_token(authorization)
     task = asyncio.create_task(

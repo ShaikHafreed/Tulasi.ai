@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .errors import AppError
-from .routers import generate, jobs
+from .routers import generate, jobs, measure
 from .services.meshy import STORAGE_DIR
 
 load_dotenv()
@@ -29,5 +29,6 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 app.include_router(generate.router)
 app.include_router(jobs.router)
+app.include_router(measure.router)
 
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")

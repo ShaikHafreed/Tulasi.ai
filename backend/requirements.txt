@@ -5,6 +5,8 @@ python-dotenv
 python-multipart
 trimesh
 supabase
+opencv-python-headless
+numpy
 pytest
 pytest-asyncio
 respx

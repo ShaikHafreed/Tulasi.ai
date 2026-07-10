@@ -81,7 +81,7 @@ Tulasi.ai/
 
 ## Phased roadmap
 
-### >>> PHASE 1 (CURRENT): backend rebuild + real scan flow
+### PHASE 1 (DONE): backend rebuild + real scan flow
 
 - `POST /api/generate`: multipart image upload → Meshy image-to-3d →
   `202 {job_id}`
@@ -94,7 +94,7 @@ Tulasi.ai/
 - `MOCK_MESHY=1`: identical code path, fake job id, simulated progress
   20/55/90 then succeeded serving `experiments/fixtures/sample.glb`. Build
   the whole UI in mock mode — real credits are for final verification only.
-- Frontend: `UploadZone` (drag-drop, jpg/png <10MB) → `ProgressStages`
+- Frontend: `UploadZone` (drag-drop, jpg/png <100MB) → `ProgressStages`
   (honest staged labels, never a bare spinner) → `ModelViewer` (Three.js +
   @react-three/fiber + drei, GLB normalized to consistent world scale on
   load, OrbitControls, dispose on unmount)
@@ -105,7 +105,7 @@ Tulasi.ai/
 - DONE = upload a photo from the real dashboard, watch it generate, see it
   in the viewer, see it appear in Library.
 
-### PHASE 2: measurement & calibration
+### >>> PHASE 2 (CURRENT): measurement & calibration
 
 - `calibrate.py`: credit-card detection (contours + approxPolyDP, aspect
   ratio 1.586 ± 0.12, confidence ≥0.6 else "not detected"), coin fallback via

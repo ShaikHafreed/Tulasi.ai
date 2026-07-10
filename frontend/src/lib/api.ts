@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { ErrorDetail, GenerateAccepted, JobRecord } from './types'
+import type { ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from './types'
 
 export class ApiError extends Error {
   detail: ErrorDetail
@@ -48,6 +48,22 @@ export async function uploadImage(file: File): Promise<GenerateAccepted> {
 
 export async function getJobStatus(jobId: string): Promise<JobRecord> {
   const response = await fetch(`/api/jobs/${jobId}`)
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.json()
+}
+
+export async function measureImage(file: File): Promise<MeasurementResult> {
+  const formData = new FormData()
+  formData.append('image', file)
+
+  const response = await fetch('/api/measure', {
+    method: 'POST',
+    body: formData,
+  })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)
