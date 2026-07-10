@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Camera, House, Layers, Search, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -22,23 +23,58 @@ export default function Sidebar({
   theme: 'dark' | 'light'
   onToggleTheme: () => void
 }) {
+  const navRef = useRef<HTMLElement>(null)
+  const itemRefs = useRef<Map<DashboardView, HTMLButtonElement>>(new Map())
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null)
+
+  function moveIndicatorTo(view: DashboardView) {
+    const el = itemRefs.current.get(view)
+    if (!el) return
+    setIndicator({ left: el.offsetLeft, width: el.offsetWidth })
+  }
+
+  useLayoutEffect(() => {
+    moveIndicatorTo(activeView)
+    // Re-measure on resize since offsetLeft/width shift as the nav reflows.
+    const onResize = () => moveIndicatorTo(activeView)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView])
+
   return (
-    <header className="fixed inset-x-0 top-0 z-10 h-17 border-b border-border bg-card">
+    <header className="fixed inset-x-0 top-0 z-10 h-17 border-b border-border bg-card/70 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
       <div className="mx-auto flex h-full max-w-[1120px] items-center gap-7 px-7">
         <div className="flex items-center gap-2 font-display text-[15px] font-semibold">
           <span className="size-1.5 rounded-full bg-brand-coral" />
           TULASI.AI
         </div>
 
-        <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
+        <nav
+          ref={navRef}
+          className="relative flex flex-1 items-center gap-1 overflow-x-auto"
+          onMouseLeave={() => moveIndicatorTo(activeView)}
+        >
+          <span
+            className="pointer-events-none absolute inset-y-1 rounded-md bg-primary/12 transition-[left,width] duration-300 ease-out"
+            style={{
+              left: indicator?.left ?? 0,
+              width: indicator?.width ?? 0,
+              opacity: indicator ? 1 : 0,
+            }}
+          />
           {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
+              ref={(el) => {
+                if (el) itemRefs.current.set(id, el)
+              }}
               type="button"
               onClick={() => onSelectView(id)}
+              onMouseEnter={() => moveIndicatorTo(id)}
               className={cn(
-                'flex h-9.5 shrink-0 items-center gap-2 rounded-md px-3.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                activeView === id && 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
+                'relative z-[1] flex h-9.5 shrink-0 items-center gap-2 rounded-md px-3.5 text-sm whitespace-nowrap text-muted-foreground transition-colors',
+                activeView === id && 'text-primary',
               )}
             >
               <Icon size={16} />
