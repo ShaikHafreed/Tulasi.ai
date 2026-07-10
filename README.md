@@ -43,3 +43,17 @@ storage.
 
 Solo build, in public. Actively shipping — see `CLAUDE.md` for the detailed
 build log and roadmap.
+
+## Build log
+
+- **Day 1–2**: Landing page, real auth (email/password + Google + GitHub
+  OAuth via Supabase), dashboard shell, and the first working photo → 3D
+  scan flow (mock-mode generation to build the UI without burning credits).
+- **Day 3**: Fixed a calibration false-positive (a car wheel was getting
+  mistaken for a coin reference and returning bogus millimeter readings) —
+  added a flatness check and a physical-plausibility guard. Switched on
+  real Meshy 3D generation end-to-end. Shipped the Tulasi AI copilot chat
+  panel (resize to a target measurement, print-readiness check, rotate,
+  export — asks clarifying questions instead of guessing). Built a Chrome
+  extension side panel that drives the same copilot from outside the tab.
+  Added a solid/wireframe view toggle to the 3D viewer.
