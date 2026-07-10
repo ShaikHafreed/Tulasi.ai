@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { supabase } from '../lib/supabase'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { supabase } from '@/lib/supabase'
 
 function GoogleIcon() {
   return (
@@ -32,17 +37,26 @@ function GitHubIcon() {
 
 export default function AuthCard({
   mode: initialMode,
-  onClose,
+  onOpenChange,
 }: {
-  mode: 'sign_in' | 'sign_up'
-  onClose: () => void
+  mode: 'sign_in' | 'sign_up' | null
+  onOpenChange: (open: boolean) => void
 }) {
-  const [mode, setMode] = useState(initialMode)
+  const [mode, setMode] = useState<'sign_in' | 'sign_up'>('sign_in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [oauthPending, setOauthPending] = useState<'google' | 'github' | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode)
+      setMessage(null)
+      setEmail('')
+      setPassword('')
+    }
+  }, [initialMode])
 
   const isSignIn = mode === 'sign_in'
 
@@ -61,7 +75,7 @@ export default function AuthCard({
     if (error) {
       setMessage(error.message)
     } else if (isSignIn) {
-      onClose()
+      onOpenChange(false)
     } else {
       setMessage('Check your email to confirm your account.')
     }
@@ -82,89 +96,88 @@ export default function AuthCard({
       setMessage(error.message)
       setOauthPending(null)
     }
-    // On success the browser navigates away to the provider, so there's
-    // nothing further to do here — it lands back on this origin signed in.
   }
 
   return (
-    <div className="auth-overlay" onClick={onClose}>
-      <div className="auth-card" onClick={(event) => event.stopPropagation()}>
-        <button className="auth-close" type="button" onClick={onClose} aria-label="Close">
-          ×
-        </button>
-
-        <div className="auth-visual">
-          <div className="brand">
-            <span className="dot" />
+    <Dialog open={initialMode !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[800px] sm:flex-row">
+        <div className="relative flex h-45 shrink-0 flex-col items-center justify-center gap-2.5 overflow-hidden bg-[linear-gradient(rgba(45,212,191,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(45,212,191,0.12)_1px,transparent_1px),linear-gradient(135deg,rgba(45,212,191,0.14),rgba(255,122,80,0.1))] bg-[length:28px_28px,28px_28px,100%_100%] sm:h-auto sm:w-[42%]">
+          <div className="flex items-center gap-2 font-display text-xl">
+            <span className="size-1.5 rounded-full bg-brand-coral" />
             TULASI.AI
           </div>
-          <p>Calibrated, not guessed.</p>
+          <p className="font-display text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
+            Calibrated, not guessed.
+          </p>
         </div>
 
-        <div className="auth-content">
-          <h2>{isSignIn ? 'Sign in' : 'Create an account'}</h2>
+        <div className="flex flex-1 flex-col justify-center p-8 text-left">
+          <DialogTitle>{isSignIn ? 'Sign in' : 'Create an account'}</DialogTitle>
 
-          <div className="oauth-row">
-            <button
+          <div className="mt-5 grid gap-2.5">
+            <Button
               type="button"
-              className="oauth-btn"
+              variant="outline"
               onClick={() => continueWithOAuth('google')}
               disabled={oauthPending !== null}
             >
               <GoogleIcon />
               {oauthPending === 'google' ? 'Redirecting…' : 'Continue with Google'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="oauth-btn"
+              variant="outline"
               onClick={() => continueWithOAuth('github')}
               disabled={oauthPending !== null}
             >
               <GitHubIcon />
               {oauthPending === 'github' ? 'Redirecting…' : 'Continue with GitHub'}
-            </button>
+            </Button>
           </div>
 
-          <div className="auth-divider">
-            <span>or continue with email</span>
+          <div className="my-5 flex items-center gap-3 font-display text-[10px] tracking-[0.08em] text-muted-foreground uppercase">
+            <Separator className="flex-1" />
+            or continue with email
+            <Separator className="flex-1" />
           </div>
 
-          <form className="auth-form" onSubmit={submit}>
-            <div className="textbox">
-              <input
+          <form className="grid gap-3.5" onSubmit={submit}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="auth-email">Email</Label>
+              <Input
+                id="auth-email"
                 type="email"
                 required
-                placeholder=" "
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
               />
-              <label>Email</label>
             </div>
-            <div className="textbox">
-              <input
+            <div className="grid gap-1.5">
+              <Label htmlFor="auth-password">Password</Label>
+              <Input
+                id="auth-password"
                 type="password"
                 required
-                placeholder=" "
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete={isSignIn ? 'current-password' : 'new-password'}
               />
-              <label>Password</label>
             </div>
 
-            {message && <p className="auth-message">{message}</p>}
+            {message && <p className="text-sm text-brand-coral">{message}</p>}
 
-            <button className="auth-submit" type="submit" disabled={pending}>
-              <span>{pending ? 'Working…' : 'Continue'}</span>
+            <Button type="submit" variant="warm" disabled={pending} className="mt-1">
+              {pending ? 'Working…' : 'Continue'}
               <span aria-hidden="true">→</span>
-            </button>
+            </Button>
           </form>
 
-          <p className="auth-switch">
+          <p className="mt-5 text-sm text-muted-foreground">
             {isSignIn ? "Don't have an account? " : 'Already have an account? '}
             <button
               type="button"
+              className="text-primary underline underline-offset-2"
               onClick={() => {
                 setMode(isSignIn ? 'sign_up' : 'sign_in')
                 setMessage(null)
@@ -174,7 +187,7 @@ export default function AuthCard({
             </button>
           </p>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
