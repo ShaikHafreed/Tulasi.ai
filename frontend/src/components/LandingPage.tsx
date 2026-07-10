@@ -181,7 +181,7 @@ export default function LandingPage() {
         <CalibrationReadout />
       </header>
 
-      <section className="mx-auto max-w-[1120px] border-t border-border px-7 py-18" id="compare">
+      <section className="mx-auto max-w-[1120px] border-t border-border px-7 py-20" id="compare">
         <div className="text-center">
           <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">The actual difference</p>
           <h2 className="mt-3 text-balance font-display text-2xl tracking-tight uppercase">
@@ -233,7 +233,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1120px] border-t border-border px-7 py-18">
+      <section className="mx-auto max-w-[1120px] border-t border-border px-7 py-20">
         <div className="text-center">
           <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">How it works</p>
           <h2 className="mt-3 font-display text-2xl tracking-tight uppercase">Four things doing the real work</h2>
