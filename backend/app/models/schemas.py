@@ -41,3 +41,30 @@ class JobRecord(BaseModel):
 
 class GenerateAccepted(BaseModel):
     job_id: str
+
+
+class TulasiEvent(BaseModel):
+    type: str
+    payload: dict | None = None
+    at: int
+
+
+class AssistantMessageRequest(BaseModel):
+    message: str
+    events: list[TulasiEvent] = []
+
+
+class ProposedAction(BaseModel):
+    action: str
+    params: dict
+    reversible: bool
+
+
+class AssistantReply(BaseModel):
+    reply: str
+    proposed_actions: list[ProposedAction] = []
+
+
+class AssistantFeedbackRequest(BaseModel):
+    message: str
+    rating: str

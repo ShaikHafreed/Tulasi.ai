@@ -94,6 +94,8 @@ Tulasi.ai/
 - `MOCK_MESHY=1`: identical code path, fake job id, simulated progress
   20/55/90 then succeeded serving `experiments/fixtures/sample.glb`. Build
   the whole UI in mock mode — real credits are for final verification only.
+  **`MOCK_MESHY=0` in local `.env` now** — real Meshy generation is live;
+  verified end-to-end (auth → task → poll → real GLB download).
 - Frontend: `UploadZone` (drag-drop, jpg/png <100MB) → `ProgressStages`
   (honest staged labels, never a bare spinner) → `ModelViewer` (Three.js +
   @react-three/fiber + drei, GLB normalized to consistent world scale on
@@ -105,7 +107,7 @@ Tulasi.ai/
 - DONE = upload a photo from the real dashboard, watch it generate, see it
   in the viewer, see it appear in Library.
 
-### >>> PHASE 2 (CURRENT): measurement & calibration
+### PHASE 2 (DONE): measurement & calibration
 
 - `calibrate.py`: credit-card detection (contours + approxPolyDP, aspect
   ratio 1.586 ± 0.12, confidence ≥0.6 else "not detected"), coin fallback via
@@ -118,7 +120,7 @@ Tulasi.ai/
 - DONE = photograph an object next to a card, dimensions land within ~5% of
   ruler truth, editable in the panel, model updates on resize.
 
-### PHASE 3: Tulasi AI copilot — in-app only (Stage A)
+### >>> PHASE 3 (DONE, needs your real-usage check): Tulasi AI copilot — in-app only (Stage A)
 
 Converses, asks clarifying questions, proposes actions, executes with
 permission, improves from feedback. In-app chat panel first — no browser

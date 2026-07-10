@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 import os
 import shutil
 import time
@@ -9,6 +10,8 @@ import httpx
 
 from .. import job_store, supabase_client
 from ..models.schemas import ErrorDetail, JobStatus
+
+logger = logging.getLogger("tulasi.meshy")
 
 MESHY_API_BASE = "https://api.meshy.ai/openapi/v1"
 STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
@@ -133,6 +136,7 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
         else:
             await _run_real(job_id, image_bytes, content_type)
     except TimeoutError:
+        logger.warning("job %s timed out", job_id)
         job_store.update(
             job_id,
             status=JobStatus.FAILED,
@@ -145,6 +149,7 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
         )
         return
     except Exception:
+        logger.exception("job %s failed", job_id)
         job_store.update(
             job_id,
             status=JobStatus.FAILED,
@@ -173,4 +178,4 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
                 )
             except Exception:
                 # Scan-history write failing shouldn't hide a model that generated fine.
-                pass
+                logger.exception("scan history write failed for job %s", job_id)

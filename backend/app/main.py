@@ -1,3 +1,5 @@
+import logging
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,10 +7,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .errors import AppError
-from .routers import generate, jobs, measure
+from .routers import assistant, generate, jobs, measure
 from .services.meshy import STORAGE_DIR
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -30,5 +33,6 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 app.include_router(generate.router)
 app.include_router(jobs.router)
 app.include_router(measure.router)
+app.include_router(assistant.router)
 
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")

@@ -12,6 +12,12 @@ import os
 from supabase import Client, create_client
 
 
+def bearer_token(authorization: str | None) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    return authorization.removeprefix("Bearer ")
+
+
 def _decode_user_id(access_token: str) -> str:
     payload_segment = access_token.split(".")[1]
     padding = "=" * (-len(payload_segment) % 4)
@@ -51,4 +57,12 @@ def insert_scan(
             "depth_mm": depth_mm,
             "depth_estimated": depth_estimated,
         }
+    ).execute()
+
+
+def insert_assistant_feedback(access_token: str, *, message: str, rating: str) -> None:
+    client = _client_as(access_token)
+    user_id = _decode_user_id(access_token)
+    client.table("assistant_feedback").insert(
+        {"user_id": user_id, "message": message, "rating": rating}
     ).execute()

@@ -7,16 +7,11 @@ from .. import job_store
 from ..models.schemas import GenerateAccepted
 from ..services import calibrate, meshy
 from ..services.uploads import validate_content_type, validate_size
+from ..supabase_client import bearer_token
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
 _background_tasks: set[asyncio.Task] = set()
-
-
-def _bearer_token(authorization: str | None) -> str | None:
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    return authorization.removeprefix("Bearer ")
 
 
 @router.post("/generate", status_code=202, response_model=GenerateAccepted)
@@ -37,7 +32,7 @@ async def generate(
     except ValueError:
         pass  # unreadable image for CV purposes — Meshy may still handle it
 
-    access_token = _bearer_token(authorization)
+    access_token = bearer_token(authorization)
     task = asyncio.create_task(
         meshy.process_job(job_id, image_bytes, image.content_type, access_token)
     )

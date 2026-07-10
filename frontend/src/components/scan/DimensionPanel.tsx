@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Lock, Unlock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -21,12 +21,19 @@ function referenceLabel(measurement: MeasurementResult): string {
   return 'No reference detected — enter real measurements'
 }
 
+export interface ExternalUpdate {
+  dims: Dimensions
+  nonce: number
+}
+
 export default function DimensionPanel({
   measurement,
   onChange,
+  externalUpdate,
 }: {
   measurement: MeasurementResult | null
   onChange?: (dimensions: Dimensions) => void
+  externalUpdate?: ExternalUpdate | null
 }) {
   const [dims, setDims] = useState<Dimensions>({
     width_mm: measurement?.width_mm ?? FALLBACK_MM.width,
@@ -35,6 +42,7 @@ export default function DimensionPanel({
   })
   const [aspectLocked, setAspectLocked] = useState(true)
   const [ratio, setRatio] = useState(1)
+  const appliedNonce = useRef<number | null>(null)
 
   useEffect(() => {
     if (!measurement) return
@@ -46,6 +54,13 @@ export default function DimensionPanel({
     setDims(next)
     setRatio(next.height_mm > 0 ? next.width_mm / next.height_mm : 1)
   }, [measurement])
+
+  useEffect(() => {
+    if (!externalUpdate || externalUpdate.nonce === appliedNonce.current) return
+    appliedNonce.current = externalUpdate.nonce
+    setDims(externalUpdate.dims)
+    setRatio(externalUpdate.dims.height_mm > 0 ? externalUpdate.dims.width_mm / externalUpdate.dims.height_mm : 1)
+  }, [externalUpdate])
 
   useEffect(() => {
     onChange?.(dims)

@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
-import type { ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from './types'
+import type { AssistantReply, ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from './types'
+import type { TulasiEvent } from './tulasiEvents'
 
 export class ApiError extends Error {
   detail: ErrorDetail
@@ -70,4 +71,30 @@ export async function measureImage(file: File): Promise<MeasurementResult> {
   }
 
   return response.json()
+}
+
+export async function sendAssistantMessage(message: string, events: TulasiEvent[]): Promise<AssistantReply> {
+  const response = await fetch('/api/assistant/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, events }),
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.json()
+}
+
+export async function sendAssistantFeedback(message: string, rating: 'up' | 'down'): Promise<void> {
+  const response = await fetch('/api/assistant/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ message, rating }),
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
 }

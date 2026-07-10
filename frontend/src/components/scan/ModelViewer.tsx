@@ -3,10 +3,25 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Stage, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 
-function Model({ url, scale = 1 }: { url: string; scale?: number }) {
+export interface RotationTrigger {
+  axis: 'x' | 'y'
+  degrees: number
+  nonce: number
+}
+
+function Model({
+  url,
+  scale = 1,
+  rotationTrigger,
+}: {
+  url: string
+  scale?: number
+  rotationTrigger?: RotationTrigger | null
+}) {
   const { scene } = useGLTF(url)
   const invalidate = useThree((state) => state.invalidate)
   const baseScale = useRef(1)
+  const appliedNonce = useRef<number | null>(null)
 
   useEffect(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -24,6 +39,18 @@ function Model({ url, scale = 1 }: { url: string; scale?: number }) {
   }, [scale, scene, invalidate])
 
   useEffect(() => {
+    if (!rotationTrigger || rotationTrigger.nonce === appliedNonce.current) return
+    appliedNonce.current = rotationTrigger.nonce
+    const radians = (rotationTrigger.degrees * Math.PI) / 180
+    if (rotationTrigger.axis === 'x') {
+      scene.rotation.x += radians
+    } else {
+      scene.rotation.y += radians
+    }
+    invalidate()
+  }, [rotationTrigger, scene, invalidate])
+
+  useEffect(() => {
     return () => {
       useGLTF.clear(url)
     }
@@ -32,7 +59,15 @@ function Model({ url, scale = 1 }: { url: string; scale?: number }) {
   return <primitive object={scene} />
 }
 
-export default function ModelViewer({ modelUrl, scale }: { modelUrl: string; scale?: number }) {
+export default function ModelViewer({
+  modelUrl,
+  scale,
+  rotationTrigger,
+}: {
+  modelUrl: string
+  scale?: number
+  rotationTrigger?: RotationTrigger | null
+}) {
   return (
     <Canvas
       frameloop="demand"
@@ -43,7 +78,7 @@ export default function ModelViewer({ modelUrl, scale }: { modelUrl: string; sca
     >
       <Suspense fallback={null}>
         <Stage environment="city" intensity={0.5} adjustCamera={false}>
-          <Model url={modelUrl} scale={scale} />
+          <Model url={modelUrl} scale={scale} rotationTrigger={rotationTrigger} />
         </Stage>
       </Suspense>
       <OrbitControls makeDefault />

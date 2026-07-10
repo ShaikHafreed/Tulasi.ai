@@ -28,6 +28,17 @@ export interface GenerateAccepted {
   job_id: string
 }
 
+export interface ProposedAction {
+  action: string
+  params: Record<string, unknown>
+  reversible: boolean
+}
+
+export interface AssistantReply {
+  reply: string
+  proposed_actions: ProposedAction[]
+}
+
 export interface Scan {
   id: string
   user_id: string
