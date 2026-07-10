@@ -64,17 +64,20 @@ Tulasi.ai/
 │       │   └── assistant/     # Phase 3: ChatPanel, MessageBubble, ActionConfirmCard
 │       └── lib/
 │           ├── supabase.ts, api.ts, types.ts, utils.ts
-│           ├── tulasiEvents.ts    # Phase 3: app-side event bus
-│           └── tulasiCommands.ts  # Phase 3: whitelisted command API
+│           ├── tulasiEvents.ts       # Phase 3: app-side event bus
+│           ├── tulasiCommands.ts     # Phase 3: whitelisted command API
+│           ├── tulasiAssistant.ts    # Phase 3: shared chat-turn logic (app + extension)
+│           └── extensionBridge.ts    # Stage B: postMessage bridge for the extension
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI, CORS for the Vite dev origin
 │   │   ├── errors.py, job_store.py, supabase_client.py
 │   │   ├── routers/{generate.py, jobs.py, measure.py, assistant.py}
-│   │   ├── services/{meshy.py, calibrate.py, validate.py, assistant.py}
+│   │   ├── services/{meshy.py, calibrate.py, validate.py, assistant.py, uploads.py}
 │   │   └── models/            # pydantic schemas
 │   ├── tests/
 │   └── requirements.txt
+├── extension/                 # Stage B: Manifest V3 side-panel companion
 ├── experiments/fixtures/      # cached Meshy responses + sample.glb
 └── .gitignore
 ```
@@ -146,16 +149,24 @@ it has anything to assist with.
 - DONE = open the chat, describe a goal, get asked a clarifying question,
   get a suggestion, confirm it, watch the model update.
 
+### Stage B — browser extension (built, needs real-world Stage A usage before relying on it)
+
+Built ahead of the original "one week of Stage A usage" gate, at explicit
+request. `extension/` — Manifest V3, `host_permissions` scoped to
+`https://tulasi.ai/*` and `http://localhost:5173/*` (dev), `chrome.sidePanel`.
+`content-script.js` only relays whitelisted `postMessage` payloads between the
+side panel and the web app's own `lib/extensionBridge.ts` — never DOM
+scraping, never broader site access. The side panel talks to the active
+Tulasi tab only; it never calls the backend directly, so it reuses the Phase
+3 backend unchanged. Load via `chrome://extensions` → Developer mode → Load
+unpacked → select `extension/`.
+
 ### DEFERRED — do not build without explicit ask
 
-- **Stage B — browser extension**: Manifest V3, `host_permissions` scoped to
-  `https://tulasi.ai/*` only, `chrome.sidePanel`, content script only relays
-  `postMessage` to the existing event bus/command API — never DOM scraping,
-  never broader site access. Reuses the Phase 3 backend unchanged. Only
-  after Stage A has been used for real for at least a week.
 - **Stage C — voice**: TTS via voice-cloning using Hafreed's own recorded
   voice, explicit consent on file, default OFF, captions always shown
-  alongside audio.
+  alongside audio. Blocked on Hafreed providing a real voice recording +
+  consent statement — cannot proceed without that input.
 
 ## Meshy rules (critical — credits cost money)
 

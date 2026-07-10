@@ -3,9 +3,7 @@ import { MessageCircle, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { sendAssistantMessage } from '@/lib/api'
-import { getRecentEvents } from '@/lib/tulasiEvents'
-import { executeCommand, isCommandAvailable } from '@/lib/tulasiCommands'
+import { confirmAction, runAssistantTurn } from '@/lib/tulasiAssistant'
 import type { ProposedAction } from '@/lib/types'
 import type { PrintCheckResult } from '@/lib/tulasiCommands'
 import MessageBubble, { type ChatMessage } from './MessageBubble'
@@ -61,22 +59,18 @@ export default function ChatPanel() {
     scrollToBottom()
 
     try {
-      const reply = await sendAssistantMessage(text, getRecentEvents())
+      const { reply, executed, pendingConfirm } = await runAssistantTurn(text)
       const replyId = nextId()
-      setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply.reply }])
+      setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply }])
 
-      for (const action of reply.proposed_actions) {
-        if (!isCommandAvailable(action.action)) continue
-
-        if (action.reversible) {
-          const result = executeCommand(action.action, action.params)
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: 'assistant', text: '', status: describeAction(action, result) },
-          ])
-        } else {
-          setPendingAction({ forMessageId: replyId, action })
-        }
+      for (const { action, result } of executed) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: 'assistant', text: '', status: describeAction(action, result) },
+        ])
+      }
+      for (const action of pendingConfirm) {
+        setPendingAction({ forMessageId: replyId, action })
       }
     } catch {
       setMessages((prev) => [
@@ -90,8 +84,8 @@ export default function ChatPanel() {
   }
 
   function confirmPendingAction() {
-    if (!pendingAction || !isCommandAvailable(pendingAction.action.action)) return
-    const result = executeCommand(pendingAction.action.action, pendingAction.action.params)
+    if (!pendingAction) return
+    const result = confirmAction(pendingAction.action)
     setMessages((prev) => [
       ...prev,
       { id: nextId(), role: 'assistant', text: '', status: describeAction(pendingAction.action, result) },

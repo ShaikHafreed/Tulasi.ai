@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Tulasi.ai Assistant",
+  "version": "0.1.0",
+  "description": "Control the Tulasi.ai copilot from a browser side panel while you have a scan open.",
+  "permissions": ["sidePanel"],
+  "host_permissions": ["https://tulasi.ai/*", "http://localhost:5173/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://tulasi.ai/*", "http://localhost:5173/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {}
+}

@@ -1,7 +1,9 @@
-import { Suspense, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Stage, useGLTF } from '@react-three/drei'
+import { Box, Layers } from 'lucide-react'
 import * as THREE from 'three'
+import { cn } from '@/lib/utils'
 
 export interface RotationTrigger {
   axis: 'x' | 'y'
@@ -13,10 +15,12 @@ function Model({
   url,
   scale = 1,
   rotationTrigger,
+  wireframe,
 }: {
   url: string
   scale?: number
   rotationTrigger?: RotationTrigger | null
+  wireframe: boolean
 }) {
   const { scene } = useGLTF(url)
   const invalidate = useThree((state) => state.invalidate)
@@ -51,6 +55,17 @@ function Model({
   }, [rotationTrigger, scene, invalidate])
 
   useEffect(() => {
+    scene.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return
+      const materials = Array.isArray(child.material) ? child.material : [child.material]
+      for (const material of materials) {
+        if ('wireframe' in material) material.wireframe = wireframe
+      }
+    })
+    invalidate()
+  }, [wireframe, scene, invalidate])
+
+  useEffect(() => {
     return () => {
       useGLTF.clear(url)
     }
@@ -68,20 +83,49 @@ export default function ModelViewer({
   scale?: number
   rotationTrigger?: RotationTrigger | null
 }) {
+  const [wireframe, setWireframe] = useState(false)
+
   return (
-    <Canvas
-      frameloop="demand"
-      dpr={[1, 2]}
-      camera={{ position: [0, 0, 3], fov: 45 }}
-      className="w-full rounded-xl border border-border"
-      style={{ height: '420px' }}
-    >
-      <Suspense fallback={null}>
-        <Stage environment="city" intensity={0.5} adjustCamera={false}>
-          <Model url={modelUrl} scale={scale} rotationTrigger={rotationTrigger} />
-        </Stage>
-      </Suspense>
-      <OrbitControls makeDefault />
-    </Canvas>
+    <div className="relative w-full">
+      <Canvas
+        frameloop="demand"
+        dpr={[1, 2]}
+        camera={{ position: [0, 0, 3], fov: 45 }}
+        className="w-full rounded-xl border border-border"
+        style={{ height: '420px' }}
+      >
+        <Suspense fallback={null}>
+          <Stage environment="city" intensity={0.5} adjustCamera={false}>
+            <Model url={modelUrl} scale={scale} rotationTrigger={rotationTrigger} wireframe={wireframe} />
+          </Stage>
+        </Suspense>
+        <OrbitControls makeDefault />
+      </Canvas>
+
+      <div className="absolute top-3 right-3 flex overflow-hidden rounded-md border border-border bg-card/90 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setWireframe(false)}
+          className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors',
+            !wireframe && 'bg-primary/15 text-primary',
+          )}
+          aria-pressed={!wireframe}
+        >
+          <Box size={13} /> Solid
+        </button>
+        <button
+          type="button"
+          onClick={() => setWireframe(true)}
+          className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors',
+            wireframe && 'bg-primary/15 text-primary',
+          )}
+          aria-pressed={wireframe}
+        >
+          <Layers size={13} /> Mesh
+        </button>
+      </div>
+    </div>
   )
 }
