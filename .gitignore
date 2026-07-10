@@ -18,5 +18,8 @@ build/
 # Backend storage (downloaded GLBs)
 backend/storage/
 
+# Voice clone data — biometric, never commit (consent files, embeddings, checkpoints)
+backend/voice/
+
 # Editors/OS
 .DS_Store

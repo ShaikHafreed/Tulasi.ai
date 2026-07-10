@@ -75,6 +75,19 @@ REVERSIBLE = {
 
 _NUMBER_MM = re.compile(r"(\d+(?:\.\d+)?)\s*mm")
 
+# Live mode sends this internal prefix instead of free text when it's
+# reacting to an event bus entry, rather than something the user typed —
+# keeps "the user said X" and "this happened on screen" unambiguous.
+LIVE_OBSERVE_PREFIX = "__live_observe__:"
+
+_EVENT_LABELS = {
+    "scan_started": "You just started a new scan.",
+    "reference_detected": "The reference object and dimensions were just measured.",
+    "dimensions_changed": "You just edited a dimension.",
+    "print_check_run": "A print check just ran.",
+    "export_requested": "The model was just exported.",
+}
+
 
 def _mock_enabled() -> bool:
     return os.environ.get("MOCK_ASSISTANT", "1") == "1"
@@ -89,9 +102,43 @@ def _latest_dimensions(events: list[TulasiEvent]) -> dict | None:
     return None
 
 
+def _summarize_activity(events: list[TulasiEvent]) -> AssistantReply:
+    if not events:
+        return AssistantReply(reply="Nothing yet — upload a photo to start a scan and I'll follow along.")
+
+    lines = [f"- {_EVENT_LABELS.get(e.type, e.type)}" for e in events[-8:]]
+    return AssistantReply(reply="Here's what I've seen so far:\n" + "\n".join(lines))
+
+
+def _observe_event(event_type: str, events: list[TulasiEvent]) -> AssistantReply:
+    label = _EVENT_LABELS.get(event_type)
+    if not label:
+        return AssistantReply(reply="")
+
+    if event_type == "scan_started":
+        return AssistantReply(reply="Watching — I'll flag anything worth knowing once it's measured and generated.")
+    if event_type == "reference_detected":
+        current = _latest_dimensions(events)
+        if current and current.get("reference_type") == "none":
+            return AssistantReply(
+                reply="No card or coin detected in that photo, so these dimensions are a rough guess — rescan with a reference object in frame for real millimeters.",
+            )
+        if current:
+            return AssistantReply(
+                reply=f"Measured it: {current.get('width_mm')}mm x {current.get('height_mm')}mm x {current.get('depth_mm')}mm. Want me to resize it to a target measurement?",
+            )
+    return AssistantReply(reply="")
+
+
 def _mock_reply(message: str, events: list[TulasiEvent]) -> AssistantReply:
+    if message.startswith(LIVE_OBSERVE_PREFIX):
+        return _observe_event(message[len(LIVE_OBSERVE_PREFIX) :], events)
+
     text = message.lower()
     current = _latest_dimensions(events)
+
+    if any(phrase in text for phrase in ("what have i done", "what did i do", "summarize", "so far", "recap")):
+        return _summarize_activity(events)
 
     if any(word in text for word in ("export", "download", "save the file", "stl")):
         return AssistantReply(

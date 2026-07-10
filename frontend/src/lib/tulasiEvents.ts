@@ -6,6 +6,8 @@ export type TulasiEventType =
   | 'export_requested'
   | 'undo'
   | 'redo'
+  | 'live_mode_enabled'
+  | 'live_mode_disabled'
 
 export interface TulasiEvent {
   type: TulasiEventType
@@ -15,12 +17,15 @@ export interface TulasiEvent {
 
 const MAX_EVENTS = 30
 let buffer: TulasiEvent[] = []
+const listeners = new Set<(event: TulasiEvent) => void>()
 
 export function pushEvent(type: TulasiEventType, payload?: Record<string, unknown>): void {
-  buffer.push({ type, payload, at: Date.now() })
+  const event: TulasiEvent = { type, payload, at: Date.now() }
+  buffer.push(event)
   if (buffer.length > MAX_EVENTS) {
     buffer = buffer.slice(buffer.length - MAX_EVENTS)
   }
+  for (const listener of listeners) listener(event)
 }
 
 export function getRecentEvents(): TulasiEvent[] {
@@ -29,4 +34,11 @@ export function getRecentEvents(): TulasiEvent[] {
 
 export function clearEvents(): void {
   buffer = []
+}
+
+// Live mode subscribes here to react to events as they happen, instead of
+// only seeing them the next time the user sends a chat message.
+export function onEvent(listener: (event: TulasiEvent) => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
 }

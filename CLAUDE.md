@@ -143,6 +143,17 @@ it has anything to assist with.
 - `MOCK_ASSISTANT=1` (needed now — $0 Anthropic credit): canned but
   realistic replies so the UI and confirm/auto-run flow can be built before
   topping up credit.
+- **Live mode** (toggle in the chat panel header): subscribes to the same
+  event bus in real time and proactively reacts (e.g. "no reference
+  detected, rescan with a card/coin in frame") instead of waiting for the
+  user to type. Scoped to the page by construction — the event bus is
+  in-memory React state with no cross-tab/cross-site visibility. Only
+  reacts to genuinely user-caused events (`scan_started`,
+  `reference_detected`, debounced `dimensions_changed`) — never to
+  `print_check_run`/`export_requested`, since those are themselves results
+  of an assistant action and reacting to them would be the assistant
+  talking to itself. A suggested-prompt chip ("What have I done so far?")
+  triggers an activity summary from the event buffer.
 - `reversible: true` actions auto-run with a toast; `reversible: false`
   (resize, export, overwrite) show a confirm button first. Thumbs up/down
   logged to a new `assistant_feedback` Supabase table.
