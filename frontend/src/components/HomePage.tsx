@@ -6,6 +6,7 @@ import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
 import ChatPanel from './assistant/ChatPanel'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -166,9 +167,11 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const [assistantOverride, setAssistantOverride] = useState<ExternalUpdate | null>(null)
   const [rotation, setRotation] = useState<RotationTrigger | null>(null)
   const [hint, setHint] = useState<string | null>(null)
+  const [autoPrintResult, setAutoPrintResult] = useState<PrintCheckResult | null>(null)
   const pollHandle = useRef<number | null>(null)
   const baselineMaxMm = useRef<number | null>(null)
   const referenceLogged = useRef(false)
+  const autoPrintChecked = useRef(false)
   const nonceCounter = useRef(0)
 
   useEffect(() => {
@@ -219,6 +222,17 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     })
   }, [liveDims, job?.model_url])
 
+  // Automatically run the print check the moment a scan finishes — it's
+  // read-only and reversible, so it fits the "reversible actions auto-run"
+  // rule without needing the user to ask the chat assistant first.
+  useEffect(() => {
+    if (phase !== 'done' || !liveDims || autoPrintChecked.current) return
+    autoPrintChecked.current = true
+    const result = printCheck(liveDims)
+    setAutoPrintResult(result)
+    pushEvent('print_check_run', { ...result, automatic: true })
+  }, [phase, liveDims])
+
   const reset = useCallback(() => {
     if (pollHandle.current !== null) clearInterval(pollHandle.current)
     clearCommandHandlers()
@@ -229,8 +243,10 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     setAssistantOverride(null)
     setRotation(null)
     setHint(null)
+    setAutoPrintResult(null)
     baselineMaxMm.current = null
     referenceLogged.current = false
+    autoPrintChecked.current = false
   }, [])
 
   const handleFileSelected = useCallback(
@@ -242,8 +258,10 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       setAssistantOverride(null)
       setRotation(null)
       setHint(null)
+      setAutoPrintResult(null)
       baselineMaxMm.current = null
       referenceLogged.current = false
+      autoPrintChecked.current = false
       pushEvent('scan_started', { file_name: file.name })
 
       try {
@@ -329,6 +347,25 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
             }
             rotationTrigger={rotation}
           />
+
+          {autoPrintResult && (
+            <Card className="gap-1.5 p-4">
+              <div className="flex items-center gap-2">
+                <Badge variant={autoPrintResult.passed ? 'default' : 'amber'}>
+                  {autoPrintResult.passed ? 'Print check passed' : 'Print check flagged'}
+                </Badge>
+                <span className="text-xs text-muted-foreground">Ran automatically — read-only.</span>
+              </div>
+              {!autoPrintResult.passed && (
+                <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
+                  {autoPrintResult.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          )}
+
           <Button variant="ghost" className="w-fit" onClick={reset}>
             Scan another object
           </Button>
