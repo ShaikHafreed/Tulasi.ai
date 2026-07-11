@@ -445,16 +445,28 @@ export default function HomePage({ session }: { session: Session }) {
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
       <main className="mx-auto max-w-[900px] px-10 pt-27 pb-12">
-        {view === 'dashboard' && (
+        {/* Every view stays mounted once visited — only hidden via CSS, never
+            unmounted — so switching tabs (e.g. to Settings) doesn't kill
+            ScanView's in-flight upload polling. That used to be a real bug:
+            conditional rendering tore down the interval on navigation and
+            looked like "generation stopped" even though the backend job was
+            still running fine. */}
+        <div className={view === 'dashboard' ? '' : 'hidden'}>
           <DashboardHome
             session={session}
             scanCount={scansLoading ? null : scans.length}
             onGoToScan={() => setView('scan')}
           />
-        )}
-        {view === 'library' && <LibraryView scans={scans} loading={scansLoading} />}
-        {view === 'scan' && <ScanView onScanSaved={refreshScans} />}
-        {view === 'settings' && <SettingsView session={session} onSignOut={() => supabase?.auth.signOut()} />}
+        </div>
+        <div className={view === 'library' ? '' : 'hidden'}>
+          <LibraryView scans={scans} loading={scansLoading} />
+        </div>
+        <div className={view === 'scan' ? '' : 'hidden'}>
+          <ScanView onScanSaved={refreshScans} />
+        </div>
+        <div className={view === 'settings' ? '' : 'hidden'}>
+          <SettingsView session={session} onSignOut={() => supabase?.auth.signOut()} />
+        </div>
       </main>
       <ChatPanel />
     </div>
