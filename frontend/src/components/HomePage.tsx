@@ -5,6 +5,7 @@ import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
+import CharacterRig from './scan/CharacterRig'
 import ChatPanel from './assistant/ChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -161,6 +162,7 @@ function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
 
 function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
+  const [jobId, setJobId] = useState<string | null>(null)
   const [job, setJob] = useState<JobRecord | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
   const [liveDims, setLiveDims] = useState<Dimensions | null>(null)
@@ -237,6 +239,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     if (pollHandle.current !== null) clearInterval(pollHandle.current)
     clearCommandHandlers()
     setPhase('idle')
+    setJobId(null)
     setJob(null)
     setError(null)
     setLiveDims(null)
@@ -253,6 +256,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     async (file: File) => {
       setPhase('uploading')
       setError(null)
+      setJobId(null)
       setJob(null)
       setLiveDims(null)
       setAssistantOverride(null)
@@ -265,12 +269,13 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       pushEvent('scan_started', { file_name: file.name })
 
       try {
-        const { job_id: jobId } = await uploadImage(file)
+        const { job_id: newJobId } = await uploadImage(file)
+        setJobId(newJobId)
         setPhase('job')
 
         pollHandle.current = window.setInterval(async () => {
           try {
-            const record = await getJobStatus(jobId)
+            const record = await getJobStatus(newJobId)
             setJob(record)
 
             if (record.status === 'succeeded') {
@@ -365,6 +370,8 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
               )}
             </Card>
           )}
+
+          {job.meshy_task_id && jobId && <CharacterRig jobId={jobId} />}
 
           <Button variant="ghost" className="w-fit" onClick={reset}>
             Scan another object

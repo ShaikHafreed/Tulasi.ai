@@ -38,10 +38,50 @@ class JobRecord(BaseModel):
     image_url: str | None = None
     error: ErrorDetail | None = None
     dimensions: MeasurementResult | None = None
+    meshy_task_id: str | None = None
 
 
 class GenerateAccepted(BaseModel):
     job_id: str
+
+
+class RigRequest(BaseModel):
+    job_id: str
+    height_meters: float = 1.7
+
+
+class RigAccepted(BaseModel):
+    rig_id: str
+
+
+class RigRecord(BaseModel):
+    status: JobStatus
+    rigged_model_url: str | None = None
+    walking_url: str | None = None
+    running_url: str | None = None
+    meshy_rig_task_id: str | None = None
+    error: ErrorDetail | None = None
+
+
+class AnimatePresetRequest(BaseModel):
+    rig_id: str
+    action_id: int
+
+
+class AnimateAccepted(BaseModel):
+    animation_id: str
+
+
+class AnimationRecord(BaseModel):
+    status: JobStatus
+    animation_url: str | None = None
+    error: ErrorDetail | None = None
+
+
+class AnimationPreset(BaseModel):
+    action_id: int
+    name: str
+    label: str
 
 
 class TulasiEvent(BaseModel):

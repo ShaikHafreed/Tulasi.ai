@@ -167,6 +167,30 @@ it has anything to assist with.
 - DONE = open the chat, describe a goal, get asked a clarifying question,
   get a suggestion, confirm it, watch the model update.
 
+### Character rigging & animation (explicit opt-in, real Meshy credits)
+
+Product-scope expansion, requested explicitly — Tulasi's core use case is
+static printable objects (mugs, brackets, hinges), which **cannot** be
+rigged; Meshy's own docs are explicit that rigging "only works well with
+standard humanoid (bipedal) [or quadruped] assets with clearly defined
+limbs." This is why it's a separate, opt-in "Is this a character?" action
+(`CharacterRig.tsx`) shown after a real (non-mock) scan, never automatic.
+
+- `services/meshy.py`: `process_rig_job` (`POST /openapi/v1/rigging` using
+  the scan's stored `meshy_task_id`, ~5 credits) and `process_animation_job`
+  (`POST /openapi/v1/animations` with a curated subset of Meshy's 500+
+  presets — real `action_id`s from `docs.meshy.ai/api/animation-library`,
+  ~3 credits per clip). Both poll and download the same way `image-to-3d`
+  does. Non-humanoid rejections are parsed into an honest human-readable
+  error, not a generic failure.
+- `routers/character.py` / `character_store.py`: same in-memory job-record
+  pattern as scans. `GET /api/character/presets` lists the curated presets.
+- Rigging is a hard no-op in `MOCK_MESHY=1` — there's no real `meshy_task_id`
+  to rig, so it fails immediately with a clear message rather than pretending.
+- Not yet verified against a real successful rig (needs an actual
+  character-shaped scan + real credits) — routing/rejection-handling is
+  tested, the success path isn't live-verified.
+
 ### Stage B — browser extension (built, needs real-world Stage A usage before relying on it)
 
 Built ahead of the original "one week of Stage A usage" gate, at explicit

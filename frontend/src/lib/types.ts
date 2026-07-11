@@ -23,6 +23,27 @@ export interface JobRecord {
   image_url: string | null
   error: ErrorDetail | null
   dimensions: MeasurementResult | null
+  meshy_task_id: string | null
+}
+
+export interface AnimationPreset {
+  action_id: number
+  name: string
+  label: string
+}
+
+export interface RigRecord {
+  status: JobStatusValue
+  rigged_model_url: string | null
+  walking_url: string | null
+  running_url: string | null
+  error: ErrorDetail | null
+}
+
+export interface AnimationRecord {
+  status: JobStatusValue
+  animation_url: string | null
+  error: ErrorDetail | null
 }
 
 export interface GenerateAccepted {

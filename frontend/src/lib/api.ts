@@ -1,5 +1,14 @@
 import { supabase } from './supabase'
-import type { AssistantReply, ErrorDetail, GenerateAccepted, JobRecord, MeasurementResult } from './types'
+import type {
+  AnimationPreset,
+  AnimationRecord,
+  AssistantReply,
+  ErrorDetail,
+  GenerateAccepted,
+  JobRecord,
+  MeasurementResult,
+  RigRecord,
+} from './types'
 import type { TulasiEvent } from './tulasiEvents'
 
 export class ApiError extends Error {
@@ -111,4 +120,52 @@ export async function speakText(text: string): Promise<Blob> {
   }
 
   return response.blob()
+}
+
+export async function listAnimationPresets(): Promise<AnimationPreset[]> {
+  const response = await fetch('/api/character/presets')
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+  return response.json()
+}
+
+export async function startRigging(jobId: string, heightMeters = 1.7): Promise<{ rig_id: string }> {
+  const response = await fetch('/api/character/rig', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId, height_meters: heightMeters }),
+  })
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+  return response.json()
+}
+
+export async function getRigStatus(rigId: string): Promise<RigRecord> {
+  const response = await fetch(`/api/character/rig/${rigId}`)
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+  return response.json()
+}
+
+export async function startAnimation(rigId: string, actionId: number): Promise<{ animation_id: string }> {
+  const response = await fetch('/api/character/animate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rig_id: rigId, action_id: actionId }),
+  })
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+  return response.json()
+}
+
+export async function getAnimationStatus(animationId: string): Promise<AnimationRecord> {
+  const response = await fetch(`/api/character/animate/${animationId}`)
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+  return response.json()
 }
