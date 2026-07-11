@@ -101,7 +101,7 @@ function CalibrationReadout() {
   }, [])
 
   return (
-    <Card className="liquid-glass mx-auto mt-14 max-w-lg gap-3 p-6 text-left" data-reveal>
+    <Card className="liquid-glass relative mx-auto mt-14 max-w-lg gap-3 p-6 text-left" data-reveal>
       <div className="flex items-center justify-between font-display text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         <span>Calibration readout</span>
         <span className="flex items-center gap-1.5 text-primary">

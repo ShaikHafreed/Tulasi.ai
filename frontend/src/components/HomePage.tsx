@@ -90,9 +90,11 @@ function DashboardHome({
               millimeters — no guessing, no eyeballing.
             </p>
           </div>
-          <Button variant="warm" className="w-fit" onClick={onGoToScan}>
-            Scan your first object
-          </Button>
+          <button type="button" className="nova-btn w-fit" onClick={onGoToScan}>
+            <span className="nova-stars" aria-hidden="true" />
+            <span className="nova-glow" aria-hidden="true" />
+            <span className="nova-label">Scan your first object</span>
+          </button>
         </div>
 
         <div className="clay flex flex-col gap-1.5 p-6">

@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Loader2, ThumbsDown, ThumbsUp, Volume2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { sendAssistantFeedback } from '@/lib/api'
+import { playSpokenText } from '@/lib/voicePlayback'
+import { getVoiceEnabled } from '@/lib/voicePreference'
 
 export interface ChatMessage {
   id: string
@@ -12,6 +14,7 @@ export interface ChatMessage {
 
 export default function MessageBubble({ message }: { message: ChatMessage }) {
   const [rated, setRated] = useState<'up' | 'down' | null>(null)
+  const [playing, setPlaying] = useState(false)
   const isUser = message.role === 'user'
 
   async function rate(rating: 'up' | 'down') {
@@ -20,6 +23,18 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       await sendAssistantFeedback(message.text, rating)
     } catch {
       // Feedback failing shouldn't interrupt the conversation.
+    }
+  }
+
+  async function listen() {
+    if (playing) return
+    setPlaying(true)
+    try {
+      await playSpokenText(message.text)
+    } catch {
+      // Silently fail — the caption is always visible either way.
+    } finally {
+      setPlaying(false)
     }
   }
 
@@ -36,6 +51,17 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       {message.status && <p className="font-display text-[11px] text-primary">{message.status}</p>}
       {!isUser && (
         <div className="flex gap-1 px-1">
+          {getVoiceEnabled() && (
+            <button
+              type="button"
+              onClick={listen}
+              disabled={playing}
+              className="rounded p-1 text-muted-foreground transition-colors hover:text-primary disabled:opacity-60"
+              aria-label="Listen"
+            >
+              {playing ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => rate('up')}

@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { confirmAction, runAssistantTurn } from '@/lib/tulasiAssistant'
 import { onEvent, pushEvent, type TulasiEventType } from '@/lib/tulasiEvents'
 import { cn } from '@/lib/utils'
-import { speakText } from '@/lib/api'
+import { playSpokenText } from '@/lib/voicePlayback'
 import { getVoiceEnabled } from '@/lib/voicePreference'
 import type { ProposedAction } from '@/lib/types'
 import type { PrintCheckResult } from '@/lib/tulasiCommands'
@@ -16,14 +16,10 @@ import ActionConfirmCard from './ActionConfirmCard'
 
 function speak(text: string): void {
   if (!text || !getVoiceEnabled()) return
-  speakText(text)
-    .then((blob) => {
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audio.addEventListener('ended', () => URL.revokeObjectURL(url))
-      void audio.play().catch(() => {})
-    })
-    .catch(() => {})
+  // Best-effort auto-play — browsers often block audio that isn't a direct
+  // result of a click, so this can silently fail. MessageBubble's manual
+  // "listen" button is the reliable fallback, not an alternative path.
+  void playSpokenText(text).catch(() => {})
 }
 
 const WELCOME: ChatMessage = {
@@ -65,6 +61,25 @@ function describeAction(action: ProposedAction, result: unknown): string {
   return parts.length ? `Done — ${action.action} (${parts.join(', ')})` : `Done — ${action.action}`
 }
 
+const SIZE_STORAGE_KEY = 'tulasi_chat_panel_size'
+const DEFAULT_SIZE = { width: 360, height: 560 }
+const MIN_SIZE = { width: 300, height: 380 }
+const MAX_SIZE = { width: 640, height: 860 }
+
+function loadPanelSize(): { width: number; height: number } {
+  try {
+    const raw = localStorage.getItem(SIZE_STORAGE_KEY)
+    if (!raw) return DEFAULT_SIZE
+    const parsed = JSON.parse(raw)
+    return {
+      width: Math.min(MAX_SIZE.width, Math.max(MIN_SIZE.width, parsed.width)),
+      height: Math.min(MAX_SIZE.height, Math.max(MIN_SIZE.height, parsed.height)),
+    }
+  } catch {
+    return DEFAULT_SIZE
+  }
+}
+
 export default function ChatPanel() {
   const [open, setOpen] = useState(false)
   const [liveMode, setLiveMode] = useState(false)
@@ -72,8 +87,42 @@ export default function ChatPanel() {
   const [pendingAction, setPendingAction] = useState<{ forMessageId: string; action: ProposedAction } | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [panelSize, setPanelSize] = useState(loadPanelSize)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dimensionsDebounce = useRef<number | null>(null)
+  const resizeStart = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+
+  const startResize = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault()
+      resizeStart.current = { x: event.clientX, y: event.clientY, ...panelSize }
+
+      function onMove(moveEvent: PointerEvent) {
+        if (!resizeStart.current) return
+        const dx = resizeStart.current.x - moveEvent.clientX
+        const dy = resizeStart.current.y - moveEvent.clientY
+        const next = {
+          width: Math.min(MAX_SIZE.width, Math.max(MIN_SIZE.width, resizeStart.current.width + dx)),
+          height: Math.min(MAX_SIZE.height, Math.max(MIN_SIZE.height, resizeStart.current.height + dy)),
+        }
+        setPanelSize(next)
+      }
+
+      function onUp() {
+        resizeStart.current = null
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        setPanelSize((current) => {
+          localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(current))
+          return current
+        })
+      }
+
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    },
+    [panelSize],
+  )
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -182,20 +231,35 @@ export default function ChatPanel() {
 
   if (!open) {
     return (
-      <Button
-        variant="warm"
-        size="icon"
-        className="fixed right-6 bottom-6 z-20 size-12 rounded-full"
-        onClick={() => setOpen(true)}
-        aria-label="Open Tulasi assistant"
-      >
-        <MessageCircle size={20} />
-      </Button>
+      <>
+        {liveMode && <div className="live-mode-frame" />}
+        <Button
+          variant="warm"
+          size="icon"
+          className="fixed right-6 bottom-6 z-20 size-12 rounded-full"
+          onClick={() => setOpen(true)}
+          aria-label="Open Tulasi assistant"
+        >
+          <MessageCircle size={20} />
+        </Button>
+      </>
     )
   }
 
   return (
-    <Card className="liquid-glass fixed right-6 bottom-6 z-20 flex h-[560px] w-[360px] flex-col gap-0 overflow-hidden p-0">
+    <>
+    {liveMode && <div className="live-mode-frame" />}
+    <Card
+      className="liquid-glass fixed right-6 bottom-6 z-20 flex flex-col gap-0 overflow-hidden p-0"
+      style={{ width: panelSize.width, height: panelSize.height }}
+    >
+      <div
+        onPointerDown={startResize}
+        className="absolute top-0 left-0 z-10 size-4 cursor-nwse-resize touch-none"
+        aria-hidden="true"
+      >
+        <div className="absolute top-1.5 left-1.5 size-2 rounded-full border-t border-l border-muted-foreground/50" />
+      </div>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="font-display text-xs tracking-[0.1em] text-primary uppercase">Tulasi assistant</p>
@@ -267,5 +331,6 @@ export default function ChatPanel() {
         </Button>
       </div>
     </Card>
+    </>
   )
 }
