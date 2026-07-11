@@ -11,3 +11,14 @@ anthropic
 pytest
 pytest-asyncio
 respx
+
+# Stage C voice cloning (OpenVoice, MIT-licensed — see CLAUDE.md for why not
+# XTTS-v2, which is non-commercial-only). OpenVoice isn't on PyPI and its
+# setup.py hard-pins numpy==1.22.0 (won't build on Python 3.12), so install
+# it and its runtime deps separately rather than via this file:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install --no-build-isolation --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+#   pip install librosa soundfile whisper-timestamped inflect eng_to_ipa pypinyin \
+#       cn2an jieba langid "faster-whisper==1.*" pydub unidecode wavmark
+# Also needs ffmpeg on PATH (winget install Gyan.FFmpeg) and, on first run,
+# approval to fetch snakers4/silero-vad via torch.hub (asks interactively).

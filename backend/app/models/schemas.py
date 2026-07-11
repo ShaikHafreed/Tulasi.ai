@@ -68,3 +68,7 @@ class AssistantReply(BaseModel):
 class AssistantFeedbackRequest(BaseModel):
     message: str
     rating: str
+
+
+class SpeakRequest(BaseModel):
+    text: str

@@ -19,7 +19,14 @@ quality, which is already commoditized (Meshy, Tripo, Rodin).
   end-to-end
 - Design system: dark-first, navy `#0b0f1a` background, teal `#2dd4bf`
   primary, coral `#ff7a50` accent, monospace display font for data
-  ("technical instrument" identity), faint blueprint-grid background
+  ("technical instrument" identity), faint blueprint-grid background.
+  Signature surface treatments in `index.css`: `.clay` (claymorphism — soft
+  dual shadows, puffy rounded tiles, used for bento-grid dashboard/feature
+  tiles) and `.liquid-glass` (frosted translucent panels with an animated
+  sheen, used for floating/overlay surfaces — ChatPanel, Dialog, the landing
+  calibration readout). Both are unlayered CSS so they intentionally
+  override Tailwind's `bg-card`/border/shadow utilities on the elements they're
+  applied to.
 - `LandingPage.tsx` — hero with a calibration-readout animation, feature
   comparison vs. Meshy/Tripo/Rodin, 4-feature grid, CTA
 - `AuthCard.tsx` — shadcn Dialog, real OAuth wired
@@ -172,12 +179,26 @@ Tulasi tab only; it never calls the backend directly, so it reuses the Phase
 3 backend unchanged. Load via `chrome://extensions` → Developer mode → Load
 unpacked → select `extension/`.
 
-### DEFERRED — do not build without explicit ask
+### Stage C — voice (built)
 
-- **Stage C — voice**: TTS via voice-cloning using Hafreed's own recorded
-  voice, explicit consent on file, default OFF, captions always shown
-  alongside audio. Blocked on Hafreed providing a real voice recording +
-  consent statement — cannot proceed without that input.
+TTS via voice-cloning (OpenVoice, self-hosted, CPU inference) using Hafreed's
+own recorded voice. `backend/app/services/voice.py` + `routers/voice.py` —
+`POST /api/voice/speak {text} -> audio/wav`. Consent recorded in
+`backend/voice/consent.json` (gitignored, never committed — biometric data).
+Models, reference embedding (`target_se.pth`), and enrollment script also
+live in `backend/voice/` (gitignored). Verified end-to-end against 5 real
+reference clips (~11s combined) through the actual API endpoint, not just a
+standalone script.
+
+Frontend: Settings → "Assistant voice replies" toggle, **default OFF**
+(`lib/voicePreference.ts`, localStorage). When on, `ChatPanel` fetches and
+plays audio for each assistant reply — the reply text is always shown as the
+caption regardless of the toggle, satisfying "captions always shown
+alongside audio" unconditionally.
+
+`MOCK_VOICE` env flag (separate from the frontend toggle) gates real model
+inference vs. a silent placeholder — real inference needs ffmpeg on PATH and
+one-time approval to fetch `snakers4/silero-vad` via `torch.hub`.
 
 ## Meshy rules (critical — credits cost money)
 

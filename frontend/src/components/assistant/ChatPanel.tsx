@@ -7,10 +7,24 @@ import { Switch } from '@/components/ui/switch'
 import { confirmAction, runAssistantTurn } from '@/lib/tulasiAssistant'
 import { onEvent, pushEvent, type TulasiEventType } from '@/lib/tulasiEvents'
 import { cn } from '@/lib/utils'
+import { speakText } from '@/lib/api'
+import { getVoiceEnabled } from '@/lib/voicePreference'
 import type { ProposedAction } from '@/lib/types'
 import type { PrintCheckResult } from '@/lib/tulasiCommands'
 import MessageBubble, { type ChatMessage } from './MessageBubble'
 import ActionConfirmCard from './ActionConfirmCard'
+
+function speak(text: string): void {
+  if (!text || !getVoiceEnabled()) return
+  speakText(text)
+    .then((blob) => {
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audio.addEventListener('ended', () => URL.revokeObjectURL(url))
+      void audio.play().catch(() => {})
+    })
+    .catch(() => {})
+}
 
 const WELCOME: ChatMessage = {
   id: 'welcome',
@@ -80,6 +94,7 @@ export default function ChatPanel() {
         if (reply) {
           const replyId = nextId()
           setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply }])
+          speak(reply)
           for (const action of pendingConfirm) {
             setPendingAction({ forMessageId: replyId, action })
           }
@@ -180,7 +195,7 @@ export default function ChatPanel() {
   }
 
   return (
-    <Card className="fixed right-6 bottom-6 z-20 flex h-[560px] w-[360px] flex-col gap-0 overflow-hidden p-0">
+    <Card className="liquid-glass fixed right-6 bottom-6 z-20 flex h-[560px] w-[360px] flex-col gap-0 overflow-hidden p-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="font-display text-xs tracking-[0.1em] text-primary uppercase">Tulasi assistant</p>

@@ -98,3 +98,17 @@ export async function sendAssistantFeedback(message: string, rating: 'up' | 'dow
     await parseErrorOrThrow(response)
   }
 }
+
+export async function speakText(text: string): Promise<Blob> {
+  const response = await fetch('/api/voice/speak', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.blob()
+}

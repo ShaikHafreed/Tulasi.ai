@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 import AuthCard from './AuthCard'
 
 const READINGS = [
@@ -10,7 +11,7 @@ const READINGS = [
   'PIPE CLAMP      32.0 × 32.0 × 18.0 mm',
 ]
 
-function Reveal({ children }: { children: React.ReactNode }) {
+function Reveal({ children, className }: { children: React.ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
 
@@ -31,7 +32,7 @@ function Reveal({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <div ref={ref} data-reveal className={visible ? 'in' : ''}>
+    <div ref={ref} data-reveal className={cn(visible && 'in', className)}>
       {children}
     </div>
   )
@@ -100,7 +101,7 @@ function CalibrationReadout() {
   }, [])
 
   return (
-    <Card className="mx-auto mt-14 max-w-lg gap-3 p-6 text-left" data-reveal>
+    <Card className="liquid-glass mx-auto mt-14 max-w-lg gap-3 p-6 text-left" data-reveal>
       <div className="flex items-center justify-between font-display text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         <span>Calibration readout</span>
         <span className="flex items-center gap-1.5 text-primary">
@@ -238,35 +239,43 @@ export default function LandingPage() {
           <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">How it works</p>
           <h2 className="mt-3 font-display text-2xl tracking-tight uppercase">Four things doing the real work</h2>
         </div>
-        <div className="mt-11 grid grid-cols-1 gap-4.5 sm:grid-cols-2">
+        <div className="mt-11 grid grid-cols-1 gap-4.5 sm:grid-cols-3">
           {[
             {
               num: '01',
               title: 'Reference-object calibration',
               body: 'A credit card or ₹10 coin in the photo gives Tulasi a known real-world length. Every other measurement is derived from it.',
+              span: 'sm:col-span-2',
+              clay: 'clay-coral',
             },
             {
               num: '02',
               title: 'Smart dimension lock',
               body: 'Change one dimension to hit a target size and the others scale with it — proportional, not distorted.',
+              span: '',
+              clay: '',
             },
             {
               num: '03',
               title: 'Print-ready validation',
               body: 'Wall thickness, unsupported overhangs, and base stability, checked against real FDM printing tolerances before export.',
+              span: '',
+              clay: '',
             },
             {
               num: '04',
               title: 'Context-aware assistant',
               body: '"Make this bracket fit a 32mm pipe" — say it, and watch the model resize in front of you.',
+              span: 'sm:col-span-2',
+              clay: '',
             },
           ].map((feature) => (
-            <Reveal key={feature.num}>
-              <Card className="gap-2 p-6.5 transition-colors hover:border-primary/50">
+            <Reveal key={feature.num} className={feature.span}>
+              <div className={cn('clay flex h-full flex-col gap-2 p-6.5', feature.clay)}>
                 <span className="font-display text-[11px] text-muted-foreground">{feature.num}</span>
                 <h3 className="text-[1.05rem] font-semibold">{feature.title}</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">{feature.body}</p>
-              </Card>
+              </div>
             </Reveal>
           ))}
         </div>

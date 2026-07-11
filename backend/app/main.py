@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .errors import AppError
-from .routers import assistant, generate, jobs, measure
+from .routers import assistant, generate, jobs, measure, voice
 from .services.meshy import STORAGE_DIR
 
 load_dotenv()
@@ -34,5 +34,6 @@ app.include_router(generate.router)
 app.include_router(jobs.router)
 app.include_router(measure.router)
 app.include_router(assistant.router)
+app.include_router(voice.router)
 
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")

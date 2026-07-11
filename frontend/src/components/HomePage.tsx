@@ -8,11 +8,13 @@ import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/Dim
 import ChatPanel from './assistant/ChatPanel'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import { ApiError, getJobStatus, uploadImage } from '@/lib/api'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
 import type { PrintCheckResult } from '../lib/tulasiCommands'
+import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 
 const MIN_PRINTABLE_MM = 2
@@ -76,20 +78,35 @@ function DashboardHome({
     <>
       <Eyebrow>Dashboard</Eyebrow>
       <PageTitle>Welcome back, {name}.</PageTitle>
-      <div className="mb-7 flex gap-4">
-        <Card className="gap-1.5 px-5.5 py-4.5">
-          <span className="font-display text-3xl tabular-nums text-primary">{scanCount ?? '—'}</span>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.3fr_1fr] sm:grid-rows-[auto_auto]">
+        <div className="clay clay-coral row-span-2 flex flex-col justify-between gap-6 p-8">
+          <div>
+            <p className="font-display text-[11px] tracking-[0.16em] text-brand-coral uppercase">
+              Ready to measure something?
+            </p>
+            <p className="mt-3 max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
+              Photograph an object next to a coin or card and Tulasi calibrates it to real-world
+              millimeters — no guessing, no eyeballing.
+            </p>
+          </div>
+          <Button variant="warm" className="w-fit" onClick={onGoToScan}>
+            Scan your first object
+          </Button>
+        </div>
+
+        <div className="clay flex flex-col gap-1.5 p-6">
+          <span className="font-display text-4xl tabular-nums text-primary">{scanCount ?? '—'}</span>
           <span className="text-[0.8rem] text-muted-foreground">Objects scanned</span>
-        </Card>
+        </div>
+
+        <div className="clay flex flex-col gap-1.5 p-6">
+          <span className="font-display text-[11px] tracking-[0.1em] text-primary uppercase">Tip</span>
+          <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
+            A credit card gives the most accurate calibration — flat, standard-sized, easy to spot.
+          </p>
+        </div>
       </div>
-      <EmptyCard
-        title="Ready to measure something?"
-        body="Photograph an object next to a coin or card and Tulasi calibrates it to real-world millimeters."
-      >
-        <Button variant="warm" className="mt-1 w-fit" onClick={onGoToScan}>
-          Scan your first object
-        </Button>
-      </EmptyCard>
     </>
   )
 }
@@ -308,6 +325,8 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
 }
 
 function SettingsView({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
+
   return (
     <>
       <Eyebrow>Settings</Eyebrow>
@@ -317,6 +336,24 @@ function SettingsView({ session, onSignOut }: { session: Session; onSignOut: () 
           Sign out
         </Button>
       </EmptyCard>
+
+      <Card className="mt-4 max-w-[480px] gap-3 p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold">Assistant voice replies</p>
+            <p className="text-sm text-muted-foreground">
+              Spoken in Hafreed's own cloned voice. Off by default — captions are always shown either way.
+            </p>
+          </div>
+          <Switch
+            checked={voiceEnabled}
+            onCheckedChange={(next) => {
+              setVoiceEnabledState(next)
+              setVoiceEnabled(next)
+            }}
+          />
+        </div>
+      </Card>
     </>
   )
 }
