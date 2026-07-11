@@ -171,6 +171,7 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
                     access_token,
                     job_id=job_id,
                     model_url=record.model_url,
+                    image_url=record.image_url,
                     width_mm=dimensions.width_mm if dimensions else None,
                     height_mm=dimensions.height_mm if dimensions else None,
                     depth_mm=dimensions.depth_mm if dimensions else None,

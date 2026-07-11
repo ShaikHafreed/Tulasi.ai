@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -9,6 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from .errors import AppError
 from .routers import assistant, generate, jobs, measure, voice
 from .services.meshy import STORAGE_DIR
+
+# OpenVoice's phoneme cleaner prints IPA characters straight to stdout; on
+# Windows that's cp1252 by default and crashes with UnicodeEncodeError the
+# first time real voice synthesis runs. Reconfiguring here (not via an env
+# var) means it's fixed regardless of who starts the process or how.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)

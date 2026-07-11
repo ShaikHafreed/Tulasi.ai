@@ -126,18 +126,30 @@ function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
         />
       )}
       {scans.length > 0 && (
-        <div className="grid max-w-[480px] gap-2">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           {scans.map((scan) => (
-            <div
-              key={scan.id}
-              className="flex justify-between rounded-md border border-border px-4 py-3.5 text-sm"
-            >
-              <span>{scan.object_name ?? scan.job_id}</span>
-              <span className="font-display text-[0.82rem] text-muted-foreground">
-                {scan.width_mm && scan.height_mm
-                  ? `${scan.width_mm.toFixed(1)} × ${scan.height_mm.toFixed(1)} mm`
-                  : '—'}
-              </span>
+            <div key={scan.id} className="clay flex flex-col gap-2.5 overflow-hidden p-3">
+              <div className="aspect-square overflow-hidden rounded-2xl bg-secondary">
+                {scan.image_url ? (
+                  <img
+                    src={scan.image_url}
+                    alt={scan.object_name ?? 'Scanned object'}
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                    No photo
+                  </div>
+                )}
+              </div>
+              <div className="px-1">
+                <p className="truncate text-sm font-medium">{scan.object_name ?? scan.job_id}</p>
+                <p className="font-display text-[0.78rem] text-muted-foreground">
+                  {scan.width_mm && scan.height_mm
+                    ? `${scan.width_mm.toFixed(1)} × ${scan.height_mm.toFixed(1)} mm`
+                    : '—'}
+                </p>
+              </div>
             </div>
           ))}
         </div>

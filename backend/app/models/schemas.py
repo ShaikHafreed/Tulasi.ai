@@ -35,6 +35,7 @@ class JobRecord(BaseModel):
     status: JobStatus
     stage: str
     model_url: str | None = None
+    image_url: str | None = None
     error: ErrorDetail | None = None
     dimensions: MeasurementResult | None = None
 

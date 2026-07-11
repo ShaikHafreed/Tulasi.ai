@@ -20,6 +20,7 @@ export interface JobRecord {
   status: JobStatusValue
   stage: string
   model_url: string | null
+  image_url: string | null
   error: ErrorDetail | null
   dimensions: MeasurementResult | null
 }
@@ -45,6 +46,7 @@ export interface Scan {
   job_id: string
   object_name: string | null
   model_url: string | null
+  image_url: string | null
   width_mm: number | null
   height_mm: number | null
   depth_mm: number | null

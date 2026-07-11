@@ -1,8 +1,13 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter, Response
 
 from ..errors import AppError
 from ..models.schemas import SpeakRequest
 from ..services import voice
+
+logger = logging.getLogger("tulasi.voice")
 
 router = APIRouter(prefix="/api", tags=["voice"])
 
@@ -17,5 +22,15 @@ async def speak(body: SpeakRequest) -> Response:
             suggested_action="",
         )
 
-    audio = voice.synthesize(body.text)
+    try:
+        audio = await asyncio.to_thread(voice.synthesize, body.text)
+    except Exception:
+        logger.exception("voice synthesis failed")
+        raise AppError(
+            status_code=500,
+            error_code="voice_synthesis_failed",
+            human_message="Couldn't generate speech for that reply.",
+            suggested_action="The caption is still shown above — try again in a moment.",
+        )
+
     return Response(content=audio, media_type="audio/wav")
