@@ -208,6 +208,32 @@ ANIMATION_PRESETS = [
 ]
 
 
+class NotACharacterModelError(Exception):
+    """Meshy rejected this model as not humanoid/quadruped enough to rig —
+    raised whether that rejection happened at task-creation time (a 4xx,
+    e.g. the real-world "422 Pose estimation failed") or asynchronously
+    (a FAILED status after polling)."""
+
+
+# Meshy's actual API error text doesn't match its docs page's prose
+# ("non-humanoid", "unclear limb structure") — live-verified real response:
+# `422 {"message":"Pose estimation failed, please provide a valid model"}`.
+# Keep both sets of keywords since Meshy's wording isn't guaranteed stable.
+_REJECTION_KEYWORDS = (
+    "humanoid",
+    "quadruped",
+    "limb",
+    "not suitable",
+    "pose estimation",
+    "valid model",
+)
+
+
+def _looks_like_character_rejection(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in _REJECTION_KEYWORDS)
+
+
 async def _create_rigging_task(input_task_id: str, height_meters: float) -> str:
     response = await _request_with_retry(
         "POST",
@@ -216,6 +242,8 @@ async def _create_rigging_task(input_task_id: str, height_meters: float) -> str:
         json={"input_task_id": input_task_id, "height_meters": height_meters},
     )
     if response.status_code >= 400:
+        if _looks_like_character_rejection(response.text):
+            raise NotACharacterModelError(response.text)
         raise RuntimeError(f"Meshy rigging task creation failed: {response.status_code} {response.text}")
     return response.json()["result"]
 
@@ -303,15 +331,17 @@ async def process_rig_job(rig_id: str, meshy_task_id: str, height_meters: float)
 
             if status in ("FAILED", "CANCELED"):
                 task_error = (payload.get("task_error") or {}).get("message", "")
-                if "humanoid" in task_error.lower() or "non-humanoid" in task_error.lower():
-                    character_store.update_rig(rig_id, status=JobStatus.FAILED, error=_humanoid_rejection_error())
-                    return
+                if _looks_like_character_rejection(task_error):
+                    raise NotACharacterModelError(task_error)
                 raise RuntimeError(f"Meshy rigging {status.lower()}: {task_error}")
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         raise TimeoutError("Meshy rigging timed out")
 
+    except NotACharacterModelError as exc:
+        logger.info("rig %s rejected as non-character: %s", rig_id, exc)
+        character_store.update_rig(rig_id, status=JobStatus.FAILED, error=_humanoid_rejection_error())
     except TimeoutError:
         logger.warning("rig %s timed out", rig_id)
         character_store.update_rig(
@@ -324,14 +354,18 @@ async def process_rig_job(rig_id: str, meshy_task_id: str, height_meters: float)
             ),
         )
     except Exception:
-        logger.exception("rig %s failed", rig_id)
+        # Deliberately worded differently from _humanoid_rejection_error() —
+        # this is an unexpected failure (network, auth, a Meshy-side bug),
+        # not a confirmed "not a character" rejection, and the two should
+        # never look identical in the UI or logs.
+        logger.exception("rig %s failed unexpectedly", rig_id)
         character_store.update_rig(
             rig_id,
             status=JobStatus.FAILED,
             error=ErrorDetail(
                 error_code="rigging_failed",
-                human_message="Couldn't rig this model.",
-                suggested_action="This works best on humanoid or quadruped character scans.",
+                human_message="Something went wrong reaching Meshy while rigging this model.",
+                suggested_action="Try again in a moment — if it keeps happening, this model may not be rigable.",
             ),
         )
 

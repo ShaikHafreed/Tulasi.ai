@@ -197,9 +197,14 @@ limbs." This is why it's a separate, opt-in "Is this a character?" action
   pattern as scans. `GET /api/character/presets` lists the curated presets.
 - Rigging is a hard no-op in `MOCK_MESHY=1` — there's no real `meshy_task_id`
   to rig, so it fails immediately with a clear message rather than pretending.
-- Not yet verified against a real successful rig (needs an actual
-  character-shaped scan + real credits) — routing/rejection-handling is
-  tested, the success path isn't live-verified.
+- Rejection path live-verified against a real non-character scan: Meshy's
+  actual error is `422 {"message":"Pose estimation failed, please provide a
+  valid model"}` — note this doesn't match the wording on Meshy's own docs
+  page ("non-humanoid", "unclear limb structure"), so `_REJECTION_KEYWORDS`
+  in `meshy.py` covers both. The rejection can also arrive synchronously at
+  task-creation time (this case) as well as async via polling — both are
+  handled. Still not verified against a real *successful* rig (needs an
+  actual character-shaped scan).
 
 ### Stage B — browser extension (built, needs real-world Stage A usage before relying on it)
 
