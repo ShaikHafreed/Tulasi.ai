@@ -68,3 +68,13 @@ def insert_assistant_feedback(access_token: str, *, message: str, rating: str) -
     client.table("assistant_feedback").insert(
         {"user_id": user_id, "message": message, "rating": rating}
     ).execute()
+
+
+def update_scan_image(access_token: str, *, job_id: str, image_url: str) -> None:
+    client = _client_as(access_token)
+    client.table("scans").update({"image_url": image_url}).eq("job_id", job_id).execute()
+
+
+def delete_scan(access_token: str, *, job_id: str) -> None:
+    client = _client_as(access_token)
+    client.table("scans").delete().eq("job_id", job_id).execute()

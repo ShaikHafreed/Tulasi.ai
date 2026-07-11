@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
@@ -10,8 +11,9 @@ import ChatPanel from './assistant/ChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, getJobStatus, uploadImage } from '@/lib/api'
+import { ApiError, deleteScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
@@ -115,7 +117,32 @@ function DashboardHome({
   )
 }
 
-function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
+function LibraryView({
+  scans,
+  loading,
+  onScanDeleted,
+}: {
+  scans: Scan[]
+  loading: boolean
+  onScanDeleted: () => void
+}) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [viewingScan, setViewingScan] = useState<Scan | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  async function confirmDelete(scan: Scan) {
+    setDeleting(true)
+    try {
+      await deleteScan(scan.job_id)
+      onScanDeleted()
+    } catch {
+      // Swallow — the row stays visible so the user can retry.
+    } finally {
+      setDeleting(false)
+      setConfirmDeleteId(null)
+    }
+  }
+
   return (
     <>
       <Eyebrow>Library</Eyebrow>
@@ -131,7 +158,12 @@ function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           {scans.map((scan) => (
             <div key={scan.id} className="clay flex flex-col gap-2.5 overflow-hidden p-3">
-              <div className="aspect-square overflow-hidden rounded-2xl bg-secondary">
+              <button
+                type="button"
+                onClick={() => setViewingScan(scan)}
+                disabled={!scan.model_url}
+                className="aspect-square overflow-hidden rounded-2xl bg-secondary disabled:cursor-default"
+              >
                 {scan.image_url ? (
                   <img
                     src={scan.image_url}
@@ -140,22 +172,64 @@ function LibraryView({ scans, loading }: { scans: Scan[]; loading: boolean }) {
                   />
                 ) : (
                   <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                    No photo
+                    No preview
                   </div>
                 )}
-              </div>
-              <div className="px-1">
-                <p className="truncate text-sm font-medium">{scan.object_name ?? scan.job_id}</p>
-                <p className="font-display text-[0.78rem] text-muted-foreground">
-                  {scan.width_mm && scan.height_mm
-                    ? `${scan.width_mm.toFixed(1)} × ${scan.height_mm.toFixed(1)} mm`
-                    : '—'}
-                </p>
+              </button>
+              <div className="flex items-start justify-between gap-2 px-1">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{scan.object_name ?? scan.job_id}</p>
+                  <p className="font-display text-[0.78rem] text-muted-foreground">
+                    {scan.width_mm && scan.height_mm
+                      ? `${scan.width_mm.toFixed(1)} × ${scan.height_mm.toFixed(1)} mm`
+                      : '—'}
+                  </p>
+                </div>
+                {confirmDeleteId === scan.id ? (
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => confirmDelete(scan)}
+                      className="text-[11px] font-medium text-brand-coral disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="text-[11px] text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(scan.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-brand-coral"
+                    aria-label="Remove scan"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <Dialog open={!!viewingScan} onOpenChange={(open) => !open && setViewingScan(null)}>
+        <DialogContent className="max-w-xl p-6">
+          <DialogTitle>{viewingScan?.object_name ?? viewingScan?.job_id}</DialogTitle>
+          {viewingScan?.model_url && <ModelViewer modelUrl={viewingScan.model_url} />}
+          <p className="font-display text-sm text-muted-foreground">
+            {viewingScan?.width_mm && viewingScan?.height_mm
+              ? `${viewingScan.width_mm.toFixed(1)} × ${viewingScan.height_mm.toFixed(1)} × ${(viewingScan.depth_mm ?? 0).toFixed(1)} mm`
+              : 'No measured dimensions'}
+          </p>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -174,7 +248,17 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const baselineMaxMm = useRef<number | null>(null)
   const referenceLogged = useRef(false)
   const autoPrintChecked = useRef(false)
+  const thumbnailUploaded = useRef(false)
   const nonceCounter = useRef(0)
+
+  const handleSnapshot = useCallback(
+    (dataUrl: string) => {
+      if (thumbnailUploaded.current || !jobId) return
+      thumbnailUploaded.current = true
+      uploadThumbnail(jobId, dataUrl).catch(() => {})
+    },
+    [jobId],
+  )
 
   useEffect(() => {
     return () => {
@@ -250,6 +334,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     baselineMaxMm.current = null
     referenceLogged.current = false
     autoPrintChecked.current = false
+    thumbnailUploaded.current = false
   }, [])
 
   const handleFileSelected = useCallback(
@@ -266,6 +351,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       baselineMaxMm.current = null
       referenceLogged.current = false
       autoPrintChecked.current = false
+      thumbnailUploaded.current = false
       pushEvent('scan_started', { file_name: file.name })
 
       try {
@@ -351,6 +437,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
                 : 1
             }
             rotationTrigger={rotation}
+            onSnapshot={handleSnapshot}
           />
 
           {autoPrintResult && (
@@ -466,7 +553,7 @@ export default function HomePage({ session }: { session: Session }) {
           />
         </div>
         <div className={view === 'library' ? '' : 'hidden'}>
-          <LibraryView scans={scans} loading={scansLoading} />
+          <LibraryView scans={scans} loading={scansLoading} onScanDeleted={refreshScans} />
         </div>
         <div className={view === 'scan' ? '' : 'hidden'}>
           <ScanView onScanSaved={refreshScans} />

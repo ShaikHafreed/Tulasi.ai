@@ -106,6 +106,16 @@ Tulasi.ai/
   the whole UI in mock mode — real credits are for final verification only.
   **`MOCK_MESHY=0` in local `.env` now** — real Meshy generation is live;
   verified end-to-end (auth → task → poll → real GLB download).
+- Library thumbnails are a **render of the generated 3D model**, not the
+  uploaded photo. `ModelViewer` captures a canvas snapshot
+  (`gl.domElement.toDataURL`, needs `preserveDrawingBuffer: true`) once the
+  model first renders and uploads it via `POST /api/scans/{job_id}/thumbnail`,
+  which overwrites the scan's `image_url` (`PATCH`-style, needs the `scans`
+  RLS UPDATE policy). The source photo is what `image_url` holds
+  *immediately* after upload (before the model exists) — it gets replaced by
+  the 3D render shortly after, so the row is only ever transiently on the
+  photo. `DELETE /api/scans/{job_id}` removes the Supabase row and every
+  local file (`.glb`, `_source.*`, `_thumb.jpg`).
 - Frontend: `UploadZone` (drag-drop, jpg/png <100MB) → `ProgressStages`
   (honest staged labels, never a bare spinner) → `ModelViewer` (Three.js +
   @react-three/fiber + drei, GLB normalized to consistent world scale on

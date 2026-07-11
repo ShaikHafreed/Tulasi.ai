@@ -16,16 +16,20 @@ function Model({
   scale = 1,
   rotationTrigger,
   wireframe,
+  onSnapshot,
 }: {
   url: string
   scale?: number
   rotationTrigger?: RotationTrigger | null
   wireframe: boolean
+  onSnapshot?: (dataUrl: string) => void
 }) {
   const { scene } = useGLTF(url)
   const invalidate = useThree((state) => state.invalidate)
+  const gl = useThree((state) => state.gl)
   const baseScale = useRef(1)
   const appliedNonce = useRef<number | null>(null)
+  const snapshotTaken = useRef(false)
 
   useEffect(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -34,6 +38,23 @@ function Model({
     baseScale.current = 2 / maxDim
     scene.scale.setScalar(baseScale.current * scale)
     invalidate()
+
+    if (onSnapshot && !snapshotTaken.current) {
+      snapshotTaken.current = true
+      // frameloop="demand" only renders on the next queued frame after
+      // invalidate() — wait two rAFs so the canvas actually has pixels
+      // before reading them back.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            onSnapshot(gl.domElement.toDataURL('image/jpeg', 0.85))
+          } catch {
+            // Canvas may be tainted (cross-origin texture) — skip silently,
+            // the library falls back to showing no thumbnail.
+          }
+        })
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, invalidate])
 
@@ -78,10 +99,12 @@ export default function ModelViewer({
   modelUrl,
   scale,
   rotationTrigger,
+  onSnapshot,
 }: {
   modelUrl: string
   scale?: number
   rotationTrigger?: RotationTrigger | null
+  onSnapshot?: (dataUrl: string) => void
 }) {
   const [wireframe, setWireframe] = useState(false)
 
@@ -90,13 +113,20 @@ export default function ModelViewer({
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
+        gl={{ preserveDrawingBuffer: true }}
         camera={{ position: [0, 0, 3], fov: 45 }}
         className="w-full rounded-xl border border-border"
         style={{ height: '420px' }}
       >
         <Suspense fallback={null}>
           <Stage environment="city" intensity={0.5} adjustCamera={false}>
-            <Model url={modelUrl} scale={scale} rotationTrigger={rotationTrigger} wireframe={wireframe} />
+            <Model
+              url={modelUrl}
+              scale={scale}
+              rotationTrigger={rotationTrigger}
+              wireframe={wireframe}
+              onSnapshot={onSnapshot}
+            />
           </Stage>
         </Suspense>
         <OrbitControls makeDefault />

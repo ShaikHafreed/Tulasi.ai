@@ -169,3 +169,38 @@ export async function getAnimationStatus(animationId: string): Promise<Animation
   }
   return response.json()
 }
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(',')
+  const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg'
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+export async function uploadThumbnail(jobId: string, dataUrl: string): Promise<void> {
+  const formData = new FormData()
+  formData.append('image', dataUrlToBlob(dataUrl), 'thumbnail.jpg')
+
+  const response = await fetch(`/api/scans/${jobId}/thumbnail`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: formData,
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+}
+
+export async function deleteScan(jobId: string): Promise<void> {
+  const response = await fetch(`/api/scans/${jobId}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+}
