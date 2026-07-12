@@ -112,7 +112,12 @@ export default function CharacterRig({ jobId }: { jobId: string }) {
 
   return (
     <Card className="gap-3 p-4">
-      {phase === 'rigging' && <p className="text-sm text-muted-foreground">Rigging a skeleton onto this model…</p>}
+      {phase === 'rigging' && (
+        <p className="text-sm text-muted-foreground">
+          Rigging a skeleton onto this model — detailed models get simplified first, so this can take a few
+          minutes…
+        </p>
+      )}
 
       {(riggedUrl || animatedUrl) && (
         <ModelViewer modelUrl={animatedUrl ?? riggedUrl!} />

@@ -203,8 +203,17 @@ limbs." This is why it's a separate, opt-in "Is this a character?" action
   page ("non-humanoid", "unclear limb structure"), so `_REJECTION_KEYWORDS`
   in `meshy.py` covers both. The rejection can also arrive synchronously at
   task-creation time (this case) as well as async via polling — both are
-  handled. Still not verified against a real *successful* rig (needs an
-  actual character-shaped scan).
+  handled.
+- **Face-limit auto-remesh**: Meshy refuses to rig models over 300k faces
+  (live-verified: a real humanoid scan came back 310,160 faces →
+  `400 "...exceeds the 300,000 face limit..."`). `process_rig_job` catches
+  this and transparently remeshes first (`POST /openapi/v1/remesh`,
+  `target_polycount=100_000`, triangle topology), then rigs the remesh
+  task id. Costs extra credits but turns a hard failure into the feature.
+- `_request_with_retry` retries transport-level failures (DNS/TLS/resets/
+  timeouts) with the same 1s/2s/4s backoff as 5xx — a live-observed
+  `httpx.ConnectError` during TLS setup used to instantly fail a whole
+  rig job on one network blip.
 
 ### Stage B — browser extension (built, needs real-world Stage A usage before relying on it)
 

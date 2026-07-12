@@ -42,15 +42,26 @@ def _stage_for_progress(progress: int) -> str:
 
 
 async def _request_with_retry(method: str, url: str, **kwargs) -> httpx.Response:
+    """Retry on 5xx AND on transport-level failures (DNS, TLS handshake,
+    resets, timeouts) with the same 1s/2s/4s backoff. Transport errors were
+    originally not retried, so one flaky-network blip mid-poll failed the
+    whole job — live-observed as httpx.ConnectError during start_tls."""
     response: httpx.Response | None = None
+    last_transport_error: httpx.TransportError | None = None
     for delay in (0, *RETRY_DELAYS):
         if delay:
             await asyncio.sleep(delay)
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.request(method, url, **kwargs)
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.request(method, url, **kwargs)
+        except httpx.TransportError as exc:
+            last_transport_error = exc
+            logger.warning("transient network error for %s %s: %r — retrying", method, url, exc)
+            continue
         if response.status_code < 500:
             return response
-    assert response is not None
+    if response is None:
+        raise RuntimeError(f"{method} {url} kept failing: {last_transport_error!r}")
     raise RuntimeError(f"{method} {url} kept failing: {response.status_code} {response.text}")
 
 
@@ -79,13 +90,25 @@ async def _get_task(task_id: str) -> dict:
 
 
 async def _download_glb(url: str, job_id: str) -> str:
+    """Download with the same retry policy as API calls — a multi-MB GLB
+    over a flaky connection can drop mid-stream (live-observed ReadError on
+    the last of three rig downloads), and that must not fail the job."""
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     dest = STORAGE_DIR / f"{job_id}.glb"
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        dest.write_bytes(response.content)
-    return f"/storage/{job_id}.glb"
+    last_error: Exception | None = None
+    for delay in (0, *RETRY_DELAYS):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                dest.write_bytes(response.content)
+            return f"/storage/{job_id}.glb"
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            last_error = exc
+            logger.warning("download failed for %s: %r — retrying", job_id, exc)
+    raise RuntimeError(f"GLB download kept failing for {job_id}: {last_error!r}")
 
 
 async def _run_mock(job_id: str) -> None:
@@ -215,6 +238,13 @@ class NotACharacterModelError(Exception):
     (a FAILED status after polling)."""
 
 
+class FaceLimitExceededError(Exception):
+    """Meshy refuses to rig models over 300,000 faces. Live-verified real
+    response: `400 {"message":"The input model has 310160 faces which
+    exceeds the 300,000 face limit for rigging. Please use the Remesh API
+    ..."}`. Recoverable — remesh to a lower polycount, then rig that."""
+
+
 # Meshy's actual API error text doesn't match its docs page's prose
 # ("non-humanoid", "unclear limb structure") — live-verified real response:
 # `422 {"message":"Pose estimation failed, please provide a valid model"}`.
@@ -234,6 +264,11 @@ def _looks_like_character_rejection(text: str) -> bool:
     return any(keyword in lowered for keyword in _REJECTION_KEYWORDS)
 
 
+def _looks_like_face_limit_error(text: str) -> bool:
+    lowered = text.lower()
+    return "face" in lowered and ("exceed" in lowered or "limit" in lowered)
+
+
 async def _create_rigging_task(input_task_id: str, height_meters: float) -> str:
     response = await _request_with_retry(
         "POST",
@@ -242,10 +277,65 @@ async def _create_rigging_task(input_task_id: str, height_meters: float) -> str:
         json={"input_task_id": input_task_id, "height_meters": height_meters},
     )
     if response.status_code >= 400:
+        if _looks_like_face_limit_error(response.text):
+            raise FaceLimitExceededError(response.text)
         if _looks_like_character_rejection(response.text):
             raise NotACharacterModelError(response.text)
         raise RuntimeError(f"Meshy rigging task creation failed: {response.status_code} {response.text}")
     return response.json()["result"]
+
+
+# Rigging rejects models over 300k faces; remesh well below the cap — 100k
+# keeps plenty of detail for an animated character while leaving headroom.
+REMESH_TARGET_POLYCOUNT = 100_000
+REMESH_TIMEOUT_SECONDS = 300
+
+
+async def _create_remesh_task(input_task_id: str, target_polycount: int) -> str:
+    response = await _request_with_retry(
+        "POST",
+        f"{MESHY_API_BASE}/remesh",
+        headers={"Authorization": f"Bearer {_api_key()}"},
+        json={
+            "input_task_id": input_task_id,
+            "target_formats": ["glb"],
+            "topology": "triangle",
+            "target_polycount": target_polycount,
+        },
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Meshy remesh task creation failed: {response.status_code} {response.text}")
+    return response.json()["result"]
+
+
+async def _get_remesh_task(task_id: str) -> dict:
+    response = await _request_with_retry(
+        "GET",
+        f"{MESHY_API_BASE}/remesh/{task_id}",
+        headers={"Authorization": f"Bearer {_api_key()}"},
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Meshy remesh task lookup failed: {response.status_code} {response.text}")
+    return response.json()
+
+
+async def _run_remesh(input_task_id: str) -> str:
+    """Simplify an over-the-face-limit model and return the remesh task id,
+    which the Rigging API accepts as an input task."""
+    remesh_task_id = await _create_remesh_task(input_task_id, REMESH_TARGET_POLYCOUNT)
+    deadline = time.monotonic() + REMESH_TIMEOUT_SECONDS
+
+    while time.monotonic() < deadline:
+        payload = await _get_remesh_task(remesh_task_id)
+        status = payload.get("status")
+        if status == "SUCCEEDED":
+            return remesh_task_id
+        if status in ("FAILED", "CANCELED"):
+            task_error = (payload.get("task_error") or {}).get("message", "")
+            raise RuntimeError(f"Meshy remesh {status.lower()}: {task_error}")
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    raise TimeoutError("Meshy remesh timed out")
 
 
 async def _get_rigging_task(task_id: str) -> dict:
@@ -295,7 +385,16 @@ async def process_rig_job(rig_id: str, meshy_task_id: str, height_meters: float)
         if _mock_enabled():
             raise RuntimeError("Rigging isn't available in mock mode — needs a real Meshy generation task.")
 
-        rig_task_id = await _create_rigging_task(meshy_task_id, height_meters)
+        try:
+            rig_task_id = await _create_rigging_task(meshy_task_id, height_meters)
+        except FaceLimitExceededError:
+            # Model is too detailed to rig directly — simplify it first,
+            # then rig the simplified copy. Costs extra credits but turns a
+            # hard failure into the thing the user actually asked for.
+            logger.info("rig %s: model over the face limit, remeshing first", rig_id)
+            character_store.update_rig(rig_id, status=JobStatus.PROCESSING)
+            remesh_task_id = await _run_remesh(meshy_task_id)
+            rig_task_id = await _create_rigging_task(remesh_task_id, height_meters)
         character_store.update_rig(rig_id, meshy_rig_task_id=rig_task_id, status=JobStatus.PROCESSING)
         deadline = time.monotonic() + RIG_TIMEOUT_SECONDS
 
@@ -309,17 +408,24 @@ async def process_rig_job(rig_id: str, meshy_task_id: str, height_meters: float)
                 if not rigged_url:
                     raise RuntimeError("Meshy reported rigging success with no glb url")
                 rigged_local = await _download_glb(rigged_url, f"{rig_id}_rigged")
+
+                # Walking/running are bonus extras — if their download dies
+                # even after retries, the rig itself still succeeded and
+                # must be reported as such, not thrown away.
                 basic = result.get("basic_animations") or {}
-                walking_local = (
-                    await _download_glb(basic["walking_glb_url"], f"{rig_id}_walking")
-                    if basic.get("walking_glb_url")
-                    else None
-                )
-                running_local = (
-                    await _download_glb(basic["running_glb_url"], f"{rig_id}_running")
-                    if basic.get("running_glb_url")
-                    else None
-                )
+
+                async def _optional_download(key: str, suffix: str) -> str | None:
+                    url = basic.get(key)
+                    if not url:
+                        return None
+                    try:
+                        return await _download_glb(url, f"{rig_id}{suffix}")
+                    except Exception:
+                        logger.warning("optional %s download failed for rig %s", key, rig_id)
+                        return None
+
+                walking_local = await _optional_download("walking_glb_url", "_walking")
+                running_local = await _optional_download("running_glb_url", "_running")
                 character_store.update_rig(
                     rig_id,
                     status=JobStatus.SUCCEEDED,
