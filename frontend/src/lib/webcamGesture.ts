@@ -10,6 +10,7 @@ export interface GestureEvent {
   magnitude: number // 0..1 intensity, always positive
   direction?: 'up' | 'down' | 'left' | 'right' // set for 'move'
   signedDelta?: number // set for 'rotate': +degrees clockwise, -degrees counter-clockwise
+  hand?: string // which hand produced it (handedness label) — for logging/UI only
   timestamp: number
 }
 
@@ -22,12 +23,18 @@ export interface TrackedPoint {
 // Live raw numbers behind the current classification, surfaced to the
 // debug panel so thresholds below can be retuned by eye instead of by
 // guesswork — the same reason the firmware track's DEBUG_SERIAL mode
-// prints raw sensor values.
+// prints raw sensor values. One per tracked hand.
 export interface GestureDebugInfo {
+  hand: string
   pinch: number
   moveDist: number
   rotateDeltaDeg: number
 }
+
+// Up to two hands tracked at once — each hand is classified independently
+// against its own neutral anchor, so both can drive gestures simultaneously
+// (e.g. left hand rotating while right hand resizes). See classifyHand.
+const MAX_HANDS = 2
 
 // Throttle to ~18fps — within the spec's 15-20fps target, easy on CPU.
 const FRAME_INTERVAL_MS = 1000 / 18
@@ -96,7 +103,7 @@ function loadHandLandmarker(): Promise<HandLandmarker> {
         HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: HAND_LANDMARKER_MODEL_URL, delegate: 'GPU' },
           runningMode: 'VIDEO',
-          numHands: 1,
+          numHands: MAX_HANDS,
         }),
       )
       .catch((err) => {
@@ -114,9 +121,16 @@ function distance2d(a: TrackedPoint, b: TrackedPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
+// Per-hand joystick center — one of these per tracked hand, keyed by
+// handedness so a hand keeps its own anchor across frames.
+interface HandState {
+  anchorPalm: { x: number; y: number } | null
+  anchorAngleDeg: number | null
+}
+
 export interface WebcamGestureHandlers {
-  onFrame?: (landmarks: TrackedPoint[] | null) => void
-  onDebug?: (info: GestureDebugInfo | null) => void
+  onFrame?: (hands: TrackedPoint[][]) => void
+  onDebug?: (infos: GestureDebugInfo[]) => void
   onGesture: (event: GestureEvent) => void
 }
 
@@ -135,9 +149,10 @@ export class WebcamGestureTracker {
   // longer than a React StrictMode dev double-mount's cleanup/remount gap.
   private generation = 0
 
-  // The move/rotate "joystick center" — see the big comment above.
-  private anchorPalm: { x: number; y: number } | null = null
-  private anchorAngleDeg: number | null = null
+  // Anchors per hand, keyed by handedness label ("Left"/"Right", with an
+  // index suffix in the rare case MediaPipe labels both hands the same). A
+  // hand that disappears has its entry dropped so it re-centers on return.
+  private handStates = new Map<string, HandState>()
 
   constructor(video: HTMLVideoElement, handlers: WebcamGestureHandlers) {
     this.video = video
@@ -166,24 +181,51 @@ export class WebcamGestureTracker {
     this.stopped = true
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle)
     this.rafHandle = null
-    this.anchorPalm = null
-    this.anchorAngleDeg = null
+    this.handStates.clear()
   }
 
   private processResult(result: HandLandmarkerResult, time: number): void {
-    const hand = result.landmarks?.[0]
-    if (!hand || hand.length < 21) {
-      this.handlers.onFrame?.(null)
-      this.handlers.onDebug?.(null)
-      // Losing tracking re-centers the joystick — reappearing resets
-      // "neutral" to wherever the hand comes back, not wherever it used to
-      // be, so there's no need to hunt for an old anchor point.
-      this.anchorPalm = null
-      this.anchorAngleDeg = null
-      return
+    const hands = result.landmarks ?? []
+    const framePoints: TrackedPoint[][] = []
+    const debugInfos: GestureDebugInfo[] = []
+    const presentKeys = new Set<string>()
+
+    for (let i = 0; i < hands.length; i++) {
+      const landmarks = hands[i]
+      if (!landmarks || landmarks.length < 21) continue
+
+      // Key by handedness so each hand keeps its own anchor frame-to-frame,
+      // not by array index (MediaPipe may reorder hands between frames).
+      // Disambiguate the rare duplicate-label case with the index.
+      const label = result.handedness?.[i]?.[0]?.categoryName ?? `hand-${i}`
+      const key = presentKeys.has(label) ? `${label}-${i}` : label
+      presentKeys.add(key)
+
+      framePoints.push(landmarks)
+      debugInfos.push(this.classifyHand(landmarks, key, time))
     }
 
-    this.handlers.onFrame?.(hand)
+    // Drop anchors for hands no longer on screen — a hand that leaves and
+    // returns re-centers to wherever it comes back, so there's no stale
+    // anchor to chase.
+    for (const key of [...this.handStates.keys()]) {
+      if (!presentKeys.has(key)) this.handStates.delete(key)
+    }
+
+    this.handlers.onFrame?.(framePoints)
+    this.handlers.onDebug?.(debugInfos)
+  }
+
+  // Classifies a single hand against its own anchor and emits at most one
+  // gesture for it. Returns the raw numbers for the debug readout. Called
+  // once per hand per frame, so two hands produce two independent gestures
+  // in the same frame.
+  private classifyHand(hand: TrackedPoint[], key: string, time: number): GestureDebugInfo {
+    let state = this.handStates.get(key)
+    if (!state) {
+      state = { anchorPalm: null, anchorAngleDeg: null }
+      this.handStates.set(key, state)
+    }
 
     const wrist = hand[0]
     const thumbTip = hand[4]
@@ -200,48 +242,47 @@ export class WebcamGestureTracker {
     }
     const angleDeg = (Math.atan2(middleMcp.y - wrist.y, middleMcp.x - wrist.x) * 180) / Math.PI
 
-    if (this.anchorPalm === null) this.anchorPalm = palm
-    if (this.anchorAngleDeg === null) this.anchorAngleDeg = angleDeg
+    if (state.anchorPalm === null) state.anchorPalm = palm
+    if (state.anchorAngleDeg === null) state.anchorAngleDeg = angleDeg
 
-    const dx = palm.x - this.anchorPalm.x
-    const dy = palm.y - this.anchorPalm.y
+    const dx = palm.x - state.anchorPalm.x
+    const dy = palm.y - state.anchorPalm.y
     const moveDist = Math.hypot(dx, dy)
 
-    let rotateDeltaDeg = angleDeg - this.anchorAngleDeg
+    let rotateDeltaDeg = angleDeg - state.anchorAngleDeg
     if (rotateDeltaDeg > 180) rotateDeltaDeg -= 360
     if (rotateDeltaDeg < -180) rotateDeltaDeg += 360
 
-    this.handlers.onDebug?.({ pinch, moveDist, rotateDeltaDeg })
+    const info: GestureDebugInfo = { hand: key, pinch, moveDist, rotateDeltaDeg }
 
     // Resize wins over move/rotate — a pinch is the most deliberate pose
     // and shouldn't be muddied by incidental hand drift while pinching.
     if (pinch > PINCH_OPEN_THRESHOLD) {
       const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (pinch - PINCH_OPEN_THRESHOLD) * RESIZE_MAGNITUDE_GAIN, 1)
-      this.handlers.onGesture({ gesture: 'resize_up', magnitude, timestamp: time })
-      return
+      this.handlers.onGesture({ gesture: 'resize_up', magnitude, hand: key, timestamp: time })
+      return info
     }
     if (pinch < PINCH_CLOSED_THRESHOLD) {
-      const magnitude = Math.min(
-        RESIZE_BASE_MAGNITUDE + (PINCH_CLOSED_THRESHOLD - pinch) * RESIZE_MAGNITUDE_GAIN,
-        1,
-      )
-      this.handlers.onGesture({ gesture: 'resize_down', magnitude, timestamp: time })
-      return
+      const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (PINCH_CLOSED_THRESHOLD - pinch) * RESIZE_MAGNITUDE_GAIN, 1)
+      this.handlers.onGesture({ gesture: 'resize_down', magnitude, hand: key, timestamp: time })
+      return info
     }
 
     if (moveDist > MOVE_DEAD_ZONE) {
       const direction: GestureEvent['direction'] =
         Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
       const magnitude = Math.min((moveDist - MOVE_DEAD_ZONE) * MOVE_MAGNITUDE_GAIN, 1)
-      this.handlers.onGesture({ gesture: 'move', magnitude, direction, timestamp: time })
-      return
+      this.handlers.onGesture({ gesture: 'move', magnitude, direction, hand: key, timestamp: time })
+      return info
     }
 
     if (Math.abs(rotateDeltaDeg) > ROTATE_DEAD_ZONE_DEG) {
       const excess = Math.abs(rotateDeltaDeg) - ROTATE_DEAD_ZONE_DEG
       const magnitude = Math.min(excess * ROTATE_MAGNITUDE_GAIN, 1)
       const signedDelta = Math.sign(rotateDeltaDeg) * magnitude * ROTATE_STEP_DEGREES_PER_FRAME
-      this.handlers.onGesture({ gesture: 'rotate', magnitude, signedDelta, timestamp: time })
+      this.handlers.onGesture({ gesture: 'rotate', magnitude, signedDelta, hand: key, timestamp: time })
     }
+
+    return info
   }
 }
