@@ -56,9 +56,15 @@ export interface ProposedAction {
   reversible: boolean
 }
 
+export interface Source {
+  title: string
+  url: string
+}
+
 export interface AssistantReply {
   reply: string
   proposed_actions: ProposedAction[]
+  sources: Source[]
 }
 
 export interface Scan {

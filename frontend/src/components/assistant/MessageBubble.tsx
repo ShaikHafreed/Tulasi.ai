@@ -4,12 +4,14 @@ import { cn } from '@/lib/utils'
 import { sendAssistantFeedback } from '@/lib/api'
 import { playSpokenText } from '@/lib/voicePlayback'
 import { getVoiceEnabled } from '@/lib/voicePreference'
+import type { Source } from '@/lib/types'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
   status?: string
+  sources?: Source[]
 }
 
 export default function MessageBubble({ message }: { message: ChatMessage }) {
@@ -48,6 +50,24 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
       >
         {message.text}
       </div>
+      {!isUser && !!message.sources?.length && (
+        <div className="flex max-w-[85%] flex-wrap gap-1.5 px-1">
+          {message.sources.map((source) => (
+            <a
+              key={source.url + source.title}
+              href={source.url.startsWith('http') ? source.url : undefined}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(
+                'rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors',
+                source.url.startsWith('http') && 'hover:border-primary/50 hover:text-primary',
+              )}
+            >
+              {source.title}
+            </a>
+          ))}
+        </div>
+      )}
       {message.status && <p className="font-display text-[11px] text-primary">{message.status}</p>}
       {!isUser && (
         <div className="flex gap-1 px-1">

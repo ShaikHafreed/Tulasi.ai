@@ -11,7 +11,8 @@ credit exists doesn't require touching the frontend at all.
 import os
 import re
 
-from ..models.schemas import AssistantReply, ProposedAction, TulasiEvent
+from ..models.schemas import AssistantReply, ProposedAction, Source, TulasiEvent
+from . import rag
 
 MODEL = "claude-sonnet-5"
 
@@ -203,6 +204,17 @@ def _mock_reply(message: str, events: list[TulasiEvent]) -> AssistantReply:
             ],
         )
 
+    # Falls through to here for anything that isn't a recognized action
+    # intent — if it looks like a Meshy API/rigging question, answer it from
+    # the curated knowledge base instead of the generic "here's what I can
+    # do" non-answer.
+    rag_matches = rag.search(text)
+    if rag_matches:
+        return AssistantReply(
+            reply="\n\n".join(m.doc.text for m in rag_matches),
+            sources=[Source(title=m.doc.title, url=m.doc.source_url) for m in rag_matches],
+        )
+
     return AssistantReply(
         reply=(
             "I can resize the model to a target measurement, check it against print heuristics, "
@@ -218,16 +230,26 @@ def _real_reply(message: str, events: list[TulasiEvent]) -> AssistantReply:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     context = "\n".join(f"- {e.type}: {e.payload}" for e in events[-10:]) or "No recent activity."
 
+    rag_matches = rag.search(message)
+    system = (
+        "You are Tulasi's in-app copilot. You help the user resize a scanned 3D object to "
+        "real-world millimeter measurements, check printability, rotate the view, and export. "
+        "You can only act through the provided tools — never claim to have done something you "
+        "didn't call a tool for. Ask a clarifying question if the request is ambiguous (e.g. no "
+        "target size given) instead of guessing."
+    )
+    if rag_matches:
+        docs_context = "\n\n".join(f"[{m.doc.title}]\n{m.doc.text}" for m in rag_matches)
+        system += (
+            "\n\nThe user's message looks like a question about the Meshy API or character "
+            f"rigging. Relevant documentation:\n\n{docs_context}\n\nGround your answer in this "
+            "documentation rather than guessing."
+        )
+
     response = client.messages.create(
         model=MODEL,
         max_tokens=1024,
-        system=(
-            "You are Tulasi's in-app copilot. You help the user resize a scanned 3D object to "
-            "real-world millimeter measurements, check printability, rotate the view, and export. "
-            "You can only act through the provided tools — never claim to have done something you "
-            "didn't call a tool for. Ask a clarifying question if the request is ambiguous (e.g. no "
-            "target size given) instead of guessing."
-        ),
+        system=system,
         tools=TOOLS,
         messages=[{"role": "user", "content": f"Recent session context:\n{context}\n\nUser: {message}"}],
     )
@@ -238,7 +260,8 @@ def _real_reply(message: str, events: list[TulasiEvent]) -> AssistantReply:
         for block in response.content
         if block.type == "tool_use"
     ]
-    return AssistantReply(reply=reply_text, proposed_actions=proposed_actions)
+    sources = [Source(title=m.doc.title, url=m.doc.source_url) for m in rag_matches]
+    return AssistantReply(reply=reply_text, proposed_actions=proposed_actions, sources=sources)
 
 
 def get_reply(message: str, events: list[TulasiEvent]) -> AssistantReply:

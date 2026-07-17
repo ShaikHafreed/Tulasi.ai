@@ -1,12 +1,13 @@
 import { sendAssistantMessage } from './api'
 import { getRecentEvents } from './tulasiEvents'
 import { executeCommand, isCommandAvailable } from './tulasiCommands'
-import type { ProposedAction } from './types'
+import type { ProposedAction, Source } from './types'
 
 export interface AssistantTurnResult {
   reply: string
   executed: { action: ProposedAction; result: unknown }[]
   pendingConfirm: ProposedAction[]
+  sources: Source[]
 }
 
 // Shared by the in-app ChatPanel and the browser-extension bridge so both
@@ -27,7 +28,7 @@ export async function runAssistantTurn(message: string): Promise<AssistantTurnRe
     }
   }
 
-  return { reply: reply.reply, executed, pendingConfirm }
+  return { reply: reply.reply, executed, pendingConfirm, sources: reply.sources }
 }
 
 export function confirmAction(action: ProposedAction): unknown {

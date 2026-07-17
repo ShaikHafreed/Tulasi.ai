@@ -101,9 +101,15 @@ class ProposedAction(BaseModel):
     reversible: bool
 
 
+class Source(BaseModel):
+    title: str
+    url: str
+
+
 class AssistantReply(BaseModel):
     reply: str
     proposed_actions: list[ProposedAction] = []
+    sources: list[Source] = []
 
 
 class AssistantFeedbackRequest(BaseModel):

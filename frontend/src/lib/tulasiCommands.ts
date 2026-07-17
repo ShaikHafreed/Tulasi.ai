@@ -1,6 +1,7 @@
 export type CommandName =
   | 'setDimensions'
   | 'rotateView'
+  | 'panView'
   | 'runPrintCheck'
   | 'exportModel'
   | 'addReferenceHint'
@@ -14,6 +15,11 @@ export interface SetDimensionsParams {
 export interface RotateViewParams {
   axis: 'x' | 'y'
   degrees: number
+}
+
+export interface PanViewParams {
+  direction: 'up' | 'down' | 'left' | 'right'
+  magnitude: number
 }
 
 export interface ExportModelParams {
@@ -32,6 +38,7 @@ export interface PrintCheckResult {
 type CommandParams = {
   setDimensions: SetDimensionsParams
   rotateView: RotateViewParams
+  panView: PanViewParams
   runPrintCheck: Record<string, never>
   exportModel: ExportModelParams
   addReferenceHint: AddReferenceHintParams

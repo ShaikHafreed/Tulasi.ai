@@ -4,9 +4,10 @@ import { Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
-import ModelViewer, { type RotationTrigger } from './scan/ModelViewer'
+import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
 import CharacterRig from './scan/CharacterRig'
+import WebcamGesturePanel from './scan/WebcamGesturePanel'
 import ChatPanel from './assistant/ChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
 import type { PrintCheckResult } from '../lib/tulasiCommands'
 import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
+import { getWebcamGestureEnabled, setWebcamGestureEnabled } from '../lib/gesturePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 
 const MIN_PRINTABLE_MM = 2
@@ -41,6 +43,14 @@ function printCheck(dims: Dimensions): PrintCheckResult {
 }
 
 const POLL_INTERVAL_MS = 1500
+
+// The in-progress/finished scan lives only in this component's React state,
+// so a hard refresh used to wipe it even though the backend job (and the
+// finished model) were still alive — sessionStorage lets ScanView rehydrate
+// from GET /api/jobs/{id} on mount instead of resetting to the upload
+// prompt. Session-scoped (not localStorage) since it's just "resume what
+// this tab was doing," not something that should follow the user forever.
+const ACTIVE_JOB_STORAGE_KEY = 'tulasi_active_scan_job_id'
 
 const UNKNOWN_ERROR: ErrorDetail = {
   error_code: 'unknown_error',
@@ -234,7 +244,13 @@ function LibraryView({
   )
 }
 
-function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
+function ScanView({
+  onScanSaved,
+  gestureEnabled,
+}: {
+  onScanSaved: () => void
+  gestureEnabled: boolean
+}) {
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
   const [jobId, setJobId] = useState<string | null>(null)
   const [job, setJob] = useState<JobRecord | null>(null)
@@ -242,6 +258,8 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const [liveDims, setLiveDims] = useState<Dimensions | null>(null)
   const [assistantOverride, setAssistantOverride] = useState<ExternalUpdate | null>(null)
   const [rotation, setRotation] = useState<RotationTrigger | null>(null)
+  const [pan, setPan] = useState<PanTrigger | null>(null)
+  const liveDimsRef = useRef<Dimensions | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [autoPrintResult, setAutoPrintResult] = useState<PrintCheckResult | null>(null)
   const pollHandle = useRef<number | null>(null)
@@ -268,6 +286,10 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   }, [])
 
   useEffect(() => {
+    liveDimsRef.current = liveDims
+  }, [liveDims])
+
+  useEffect(() => {
     if (baselineMaxMm.current === null && job?.dimensions) {
       const { width_mm, height_mm, depth_mm } = job.dimensions
       baselineMaxMm.current = Math.max(width_mm ?? 0, height_mm ?? 0, depth_mm ?? 0) || null
@@ -289,6 +311,10 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       rotateView: (params) => {
         nonceCounter.current += 1
         setRotation({ ...params, nonce: nonceCounter.current })
+      },
+      panView: (params) => {
+        nonceCounter.current += 1
+        setPan({ ...params, nonce: nonceCounter.current })
       },
       runPrintCheck: () => {
         const result = printCheck(liveDims)
@@ -322,6 +348,7 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   const reset = useCallback(() => {
     if (pollHandle.current !== null) clearInterval(pollHandle.current)
     clearCommandHandlers()
+    sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
     setPhase('idle')
     setJobId(null)
     setJob(null)
@@ -329,12 +356,77 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
     setLiveDims(null)
     setAssistantOverride(null)
     setRotation(null)
+    setPan(null)
     setHint(null)
     setAutoPrintResult(null)
     baselineMaxMm.current = null
     referenceLogged.current = false
     autoPrintChecked.current = false
     thumbnailUploaded.current = false
+  }, [])
+
+  // Shared by a fresh upload and by resuming a job found in sessionStorage
+  // after a page refresh — both just watch the same job id to completion.
+  const startPolling = useCallback(
+    (idToPoll: string) => {
+      if (pollHandle.current !== null) clearInterval(pollHandle.current)
+      pollHandle.current = window.setInterval(async () => {
+        try {
+          const record = await getJobStatus(idToPoll)
+          setJob(record)
+
+          if (record.status === 'succeeded') {
+            clearInterval(pollHandle.current!)
+            setPhase('done')
+            onScanSaved()
+          } else if (record.status === 'failed') {
+            clearInterval(pollHandle.current!)
+            sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
+            setError(record.error ?? UNKNOWN_ERROR)
+            setPhase('idle')
+          }
+        } catch (err) {
+          clearInterval(pollHandle.current!)
+          sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
+          setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
+          setPhase('idle')
+        }
+      }, POLL_INTERVAL_MS)
+    },
+    [onScanSaved],
+  )
+
+  // Resume whatever this tab was doing before a refresh — the backend job
+  // (in-memory but the process itself doesn't restart on a frontend
+  // reload) and the finished scan are both still there; only this
+  // component's React state was lost.
+  useEffect(() => {
+    const savedJobId = sessionStorage.getItem(ACTIVE_JOB_STORAGE_KEY)
+    if (!savedJobId) return
+
+    setJobId(savedJobId)
+    setPhase('job')
+    getJobStatus(savedJobId)
+      .then((record) => {
+        setJob(record)
+        if (record.status === 'succeeded') {
+          setPhase('done')
+        } else if (record.status === 'failed') {
+          sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
+          setError(record.error ?? UNKNOWN_ERROR)
+          setPhase('idle')
+        } else {
+          startPolling(savedJobId)
+        }
+      })
+      .catch(() => {
+        // Best-effort restore — a stale/unknown job id (backend restarted,
+        // or this is from days ago) just falls back to the upload prompt
+        // rather than surfacing a scary error for a background resume.
+        sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
+        setPhase('idle')
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleFileSelected = useCallback(
@@ -346,45 +438,28 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
       setLiveDims(null)
       setAssistantOverride(null)
       setRotation(null)
+      setPan(null)
       setHint(null)
       setAutoPrintResult(null)
       baselineMaxMm.current = null
       referenceLogged.current = false
       autoPrintChecked.current = false
       thumbnailUploaded.current = false
+      sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
       pushEvent('scan_started', { file_name: file.name })
 
       try {
         const { job_id: newJobId } = await uploadImage(file)
+        sessionStorage.setItem(ACTIVE_JOB_STORAGE_KEY, newJobId)
         setJobId(newJobId)
         setPhase('job')
-
-        pollHandle.current = window.setInterval(async () => {
-          try {
-            const record = await getJobStatus(newJobId)
-            setJob(record)
-
-            if (record.status === 'succeeded') {
-              clearInterval(pollHandle.current!)
-              setPhase('done')
-              onScanSaved()
-            } else if (record.status === 'failed') {
-              clearInterval(pollHandle.current!)
-              setError(record.error ?? UNKNOWN_ERROR)
-              setPhase('idle')
-            }
-          } catch (err) {
-            clearInterval(pollHandle.current!)
-            setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
-            setPhase('idle')
-          }
-        }, POLL_INTERVAL_MS)
+        startPolling(newJobId)
       } catch (err) {
         setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
         setPhase('idle')
       }
     },
-    [onScanSaved],
+    [startPolling],
   )
 
   return (
@@ -437,8 +512,13 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
                 : 1
             }
             rotationTrigger={rotation}
+            panTrigger={pan}
             onSnapshot={handleSnapshot}
           />
+
+          {gestureEnabled && (
+            <WebcamGesturePanel enabled={gestureEnabled} getDimensions={() => liveDimsRef.current} />
+          )}
 
           {autoPrintResult && (
             <Card className="gap-1.5 p-4">
@@ -469,7 +549,17 @@ function ScanView({ onScanSaved }: { onScanSaved: () => void }) {
   )
 }
 
-function SettingsView({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function SettingsView({
+  session,
+  onSignOut,
+  gestureEnabled,
+  onToggleGesture,
+}: {
+  session: Session
+  onSignOut: () => void
+  gestureEnabled: boolean
+  onToggleGesture: (next: boolean) => void
+}) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
 
   return (
@@ -499,6 +589,27 @@ function SettingsView({ session, onSignOut }: { session: Session; onSignOut: () 
           />
         </div>
       </Card>
+
+      <Card className="mt-4 max-w-[480px] gap-3 p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="flex items-center gap-2 font-semibold">
+              Gesture control (webcam) <Badge variant="amber">Experimental</Badge>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Rotate, pan, and resize the model by moving your hand in front of the webcam. Off by default —
+              shows a live camera preview with tracked hand points whenever it's on.
+            </p>
+          </div>
+          <Switch
+            checked={gestureEnabled}
+            onCheckedChange={(next) => {
+              onToggleGesture(next)
+              setWebcamGestureEnabled(next)
+            }}
+          />
+        </div>
+      </Card>
     </>
   )
 }
@@ -508,6 +619,10 @@ export default function HomePage({ session }: { session: Session }) {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [scans, setScans] = useState<Scan[]>([])
   const [scansLoading, setScansLoading] = useState(true)
+  // Lifted here (not read fresh from localStorage inside each view) because
+  // every dashboard view stays mounted once visited — a view read once on
+  // mount would miss a toggle flipped from Settings without a remount.
+  const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
@@ -556,10 +671,15 @@ export default function HomePage({ session }: { session: Session }) {
           <LibraryView scans={scans} loading={scansLoading} onScanDeleted={refreshScans} />
         </div>
         <div className={view === 'scan' ? '' : 'hidden'}>
-          <ScanView onScanSaved={refreshScans} />
+          <ScanView onScanSaved={refreshScans} gestureEnabled={gestureEnabled} />
         </div>
         <div className={view === 'settings' ? '' : 'hidden'}>
-          <SettingsView session={session} onSignOut={() => supabase?.auth.signOut()} />
+          <SettingsView
+            session={session}
+            onSignOut={() => supabase?.auth.signOut()}
+            gestureEnabled={gestureEnabled}
+            onToggleGesture={setGestureEnabled}
+          />
         </div>
       </main>
       <ChatPanel />

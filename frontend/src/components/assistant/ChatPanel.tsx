@@ -139,10 +139,10 @@ export default function ChatPanel() {
       scrollToBottom()
 
       try {
-        const { reply, executed, pendingConfirm } = await runAssistantTurn(text)
+        const { reply, executed, pendingConfirm, sources } = await runAssistantTurn(text)
         if (reply) {
           const replyId = nextId()
-          setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply }])
+          setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply, sources }])
           speak(reply)
           for (const action of pendingConfirm) {
             setPendingAction({ forMessageId: replyId, action })
