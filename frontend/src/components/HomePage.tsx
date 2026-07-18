@@ -419,9 +419,13 @@ function ScanView({
   }, [])
 
   // Shared by a fresh upload and by resuming a job found in sessionStorage
-  // after a page refresh — both just watch the same job id to completion.
+  // after a page refresh — both watch the same job id to completion. But a
+  // fresh upload that dies is a real error worth showing; a *resumed* job
+  // that's gone (backend restarted, stale id) is just stale state and must
+  // fail silently back to the upload prompt — never nag on page load.
+  // `silentOnError` draws that line.
   const startPolling = useCallback(
-    (idToPoll: string) => {
+    (idToPoll: string, silentOnError = false) => {
       if (pollHandle.current !== null) clearInterval(pollHandle.current)
       pollHandle.current = window.setInterval(async () => {
         try {
@@ -435,13 +439,13 @@ function ScanView({
           } else if (record.status === 'failed') {
             clearInterval(pollHandle.current!)
             sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
-            setError(record.error ?? UNKNOWN_ERROR)
+            if (!silentOnError) setError(record.error ?? UNKNOWN_ERROR)
             setPhase('idle')
           }
         } catch (err) {
           clearInterval(pollHandle.current!)
           sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
-          setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
+          if (!silentOnError) setError(err instanceof ApiError ? err.detail : UNKNOWN_ERROR)
           setPhase('idle')
         }
       }, POLL_INTERVAL_MS)
@@ -457,27 +461,27 @@ function ScanView({
     const savedJobId = sessionStorage.getItem(ACTIVE_JOB_STORAGE_KEY)
     if (!savedJobId) return
 
-    setJobId(savedJobId)
-    setPhase('job')
+    // Stay in 'idle' until we've confirmed the saved job actually exists —
+    // don't optimistically flip to the progress view, or a stale id flashes
+    // fake progress before falling back. Everything here is best-effort and
+    // silent: a missing/stale job just leaves the clean upload prompt.
     getJobStatus(savedJobId)
       .then((record) => {
-        setJob(record)
         if (record.status === 'succeeded') {
+          setJobId(savedJobId)
+          setJob(record)
           setPhase('done')
         } else if (record.status === 'failed') {
           sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
-          setError(record.error ?? UNKNOWN_ERROR)
-          setPhase('idle')
         } else {
-          startPolling(savedJobId)
+          setJobId(savedJobId)
+          setJob(record)
+          setPhase('job')
+          startPolling(savedJobId, true)
         }
       })
       .catch(() => {
-        // Best-effort restore — a stale/unknown job id (backend restarted,
-        // or this is from days ago) just falls back to the upload prompt
-        // rather than surfacing a scary error for a background resume.
         sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
-        setPhase('idle')
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
