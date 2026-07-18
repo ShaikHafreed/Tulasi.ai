@@ -119,3 +119,13 @@ class AssistantFeedbackRequest(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
+
+
+class ExportRequest(BaseModel):
+    # "stl" (3D-printing standard) or "glb". Dimensions are the real measured/
+    # edited mm; when all three are present the mesh is scaled so its bounding
+    # box matches them. Omit them to export at the model's own scale.
+    format: str = "stl"
+    width_mm: float | None = None
+    height_mm: float | None = None
+    depth_mm: float | None = None

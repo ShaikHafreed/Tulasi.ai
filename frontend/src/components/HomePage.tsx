@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Trash2 } from 'lucide-react'
+import { Download, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, deleteScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
+import { ApiError, deleteScan, exportScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
@@ -250,6 +250,53 @@ function LibraryView({
   )
 }
 
+// Real-world-scale export. STL is scaled server-side so its bounding box
+// equals the measured mm — it opens in a slicer at the true size, which is
+// Tulasi's whole "make it FIT right" point. GLB keeps materials for web use.
+function ExportCard({ jobId, dims }: { jobId: string; dims: Dimensions | null }) {
+  const [busy, setBusy] = useState<'stl' | 'glb' | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  async function handleExport(format: 'stl' | 'glb') {
+    if (!dims || busy) return
+    setBusy(format)
+    setFailed(false)
+    try {
+      await exportScan(jobId, format, dims)
+    } catch {
+      setFailed(true)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Card className="gap-2 p-4">
+      <div className="flex items-center gap-2">
+        <Download size={14} className="text-primary" />
+        <p className="text-sm font-semibold">Export</p>
+        {dims && (
+          <span className="font-display text-[11px] text-muted-foreground">
+            at {dims.width_mm.toFixed(1)} × {dims.height_mm.toFixed(1)} × {dims.depth_mm.toFixed(1)} mm
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        STL drops into a slicer at real size. GLB keeps colour and materials for web use.
+      </p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" disabled={!dims || busy !== null} onClick={() => handleExport('stl')}>
+          {busy === 'stl' ? 'Exporting…' : 'Download STL'}
+        </Button>
+        <Button variant="ghost" size="sm" disabled={!dims || busy !== null} onClick={() => handleExport('glb')}>
+          {busy === 'glb' ? 'Exporting…' : 'Download GLB'}
+        </Button>
+      </div>
+      {failed && <p className="text-xs text-brand-coral">Export failed — check the backend is running and try again.</p>}
+    </Card>
+  )
+}
+
 function ScanView({
   onScanSaved,
   gestureEnabled,
@@ -329,18 +376,16 @@ function ScanView({
         pushEvent('print_check_run', { ...result })
         return result
       },
-      exportModel: () => {
-        pushEvent('export_requested', { model_url: job.model_url })
-        const link = document.createElement('a')
-        link.href = job.model_url!
-        link.download = 'tulasi-model.glb'
-        link.click()
+      exportModel: (params) => {
+        const format = params.format ?? 'stl'
+        pushEvent('export_requested', { format })
+        if (jobId) exportScan(jobId, format, liveDims).catch(() => {})
       },
       addReferenceHint: (params) => {
         setHint(`Tip: place a ${params.reference_type} flat in frame next to the object, then rescan for accurate millimeters.`)
       },
     })
-  }, [liveDims, job?.model_url])
+  }, [liveDims, job?.model_url, jobId])
 
   // Automatically run the print check the moment a scan finishes — it's
   // read-only and reversible, so it fits the "reversible actions auto-run"
@@ -552,6 +597,8 @@ function ScanView({
               )}
             </Card>
           )}
+
+          {jobId && <ExportCard jobId={jobId} dims={liveDims} />}
 
           {job.meshy_task_id && jobId && <CharacterRig jobId={jobId} />}
 

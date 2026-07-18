@@ -23,7 +23,7 @@ export interface PanViewParams {
 }
 
 export interface ExportModelParams {
-  format?: 'glb'
+  format?: 'stl' | 'glb'
 }
 
 export interface AddReferenceHintParams {

@@ -1,9 +1,11 @@
 import logging
 
-from fastapi import APIRouter, File, Header, UploadFile
+from fastapi import APIRouter, File, Header, Response, UploadFile
 
 from .. import supabase_client
 from ..errors import AppError
+from ..models.schemas import ExportRequest
+from ..services import exporter
 from ..services.meshy import STORAGE_DIR
 from ..services.uploads import validate_content_type, validate_size
 
@@ -46,6 +48,24 @@ async def upload_thumbnail(
         # The thumbnail file is saved either way — a stale Library row until
         # next refresh isn't worth failing the request over.
         logger.exception("scan image update failed for job %s", job_id)
+
+
+@router.post("/{job_id}/export")
+async def export_scan(job_id: str, body: ExportRequest) -> Response:
+    # No auth: this only reads a local storage file and returns it, same as
+    # the public /storage mount — gating it would be inconsistent.
+    data, filename, content_type = exporter.build_export(
+        job_id,
+        body.format.lower(),
+        body.width_mm,
+        body.height_mm,
+        body.depth_mm,
+    )
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/{job_id}", status_code=204)

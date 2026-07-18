@@ -204,3 +204,35 @@ export async function deleteScan(jobId: string): Promise<void> {
     await parseErrorOrThrow(response)
   }
 }
+
+export interface ExportDimensions {
+  width_mm: number
+  height_mm: number
+  depth_mm: number
+}
+
+// Downloads the model scaled to its real millimeter dimensions. STL drops
+// straight into a slicer at the correct size; GLB keeps materials for web use.
+export async function exportScan(
+  jobId: string,
+  format: 'stl' | 'glb',
+  dims: ExportDimensions,
+): Promise<void> {
+  const response = await fetch(`/api/scans/${jobId}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format, ...dims }),
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `tulasi-${jobId}.${format}`
+  link.click()
+  URL.revokeObjectURL(url)
+}
