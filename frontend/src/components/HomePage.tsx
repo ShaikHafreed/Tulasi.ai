@@ -8,6 +8,7 @@ import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/Model
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
 import CharacterRig from './scan/CharacterRig'
 import WebcamGesturePanel from './scan/WebcamGesturePanel'
+import GloveGesturePanel from './scan/GloveGesturePanel'
 import ChatPanel from './assistant/ChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,7 +21,12 @@ import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
 import type { PrintCheckResult } from '../lib/tulasiCommands'
 import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
-import { getWebcamGestureEnabled, setWebcamGestureEnabled } from '../lib/gesturePreference'
+import {
+  getGloveGestureEnabled,
+  getWebcamGestureEnabled,
+  setGloveGestureEnabled,
+  setWebcamGestureEnabled,
+} from '../lib/gesturePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 
 const MIN_PRINTABLE_MM = 2
@@ -247,9 +253,11 @@ function LibraryView({
 function ScanView({
   onScanSaved,
   gestureEnabled,
+  gloveEnabled,
 }: {
   onScanSaved: () => void
   gestureEnabled: boolean
+  gloveEnabled: boolean
 }) {
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
   const [jobId, setJobId] = useState<string | null>(null)
@@ -519,6 +527,13 @@ function ScanView({
           {gestureEnabled && (
             <WebcamGesturePanel enabled={gestureEnabled} getDimensions={() => liveDimsRef.current} />
           )}
+          {gloveEnabled && (
+            <GloveGesturePanel
+              enabled={gloveEnabled}
+              getDimensions={() => liveDimsRef.current}
+              raised={gestureEnabled}
+            />
+          )}
 
           {autoPrintResult && (
             <Card className="gap-1.5 p-4">
@@ -554,11 +569,15 @@ function SettingsView({
   onSignOut,
   gestureEnabled,
   onToggleGesture,
+  gloveEnabled,
+  onToggleGlove,
 }: {
   session: Session
   onSignOut: () => void
   gestureEnabled: boolean
   onToggleGesture: (next: boolean) => void
+  gloveEnabled: boolean
+  onToggleGlove: (next: boolean) => void
 }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
 
@@ -610,6 +629,27 @@ function SettingsView({
           />
         </div>
       </Card>
+
+      <Card className="mt-4 max-w-[480px] gap-3 p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="flex items-center gap-2 font-semibold">
+              Gesture control (glove) <Badge variant="amber">Experimental</Badge>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              The physical ESP32 glove (Track 2). Same rotate/pan/resize gestures over Bluetooth. Off by default —
+              needs Chrome or Edge, and a "Connect glove" step to pair.
+            </p>
+          </div>
+          <Switch
+            checked={gloveEnabled}
+            onCheckedChange={(next) => {
+              onToggleGlove(next)
+              setGloveGestureEnabled(next)
+            }}
+          />
+        </div>
+      </Card>
     </>
   )
 }
@@ -623,6 +663,7 @@ export default function HomePage({ session }: { session: Session }) {
   // every dashboard view stays mounted once visited — a view read once on
   // mount would miss a toggle flipped from Settings without a remount.
   const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
+  const [gloveEnabled, setGloveEnabled] = useState(getGloveGestureEnabled())
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
@@ -671,7 +712,7 @@ export default function HomePage({ session }: { session: Session }) {
           <LibraryView scans={scans} loading={scansLoading} onScanDeleted={refreshScans} />
         </div>
         <div className={view === 'scan' ? '' : 'hidden'}>
-          <ScanView onScanSaved={refreshScans} gestureEnabled={gestureEnabled} />
+          <ScanView onScanSaved={refreshScans} gestureEnabled={gestureEnabled} gloveEnabled={gloveEnabled} />
         </div>
         <div className={view === 'settings' ? '' : 'hidden'}>
           <SettingsView
@@ -679,6 +720,8 @@ export default function HomePage({ session }: { session: Session }) {
             onSignOut={() => supabase?.auth.signOut()}
             gestureEnabled={gestureEnabled}
             onToggleGesture={setGestureEnabled}
+            gloveEnabled={gloveEnabled}
+            onToggleGlove={setGloveEnabled}
           />
         </div>
       </main>

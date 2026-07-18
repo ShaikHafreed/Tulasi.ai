@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'tulasi_gesture_webcam_enabled'
+const GLOVE_KEY = 'tulasi_gesture_glove_enabled'
 const CAMERA_DEVICE_KEY = 'tulasi_gesture_camera_device_id'
 
 // Webcam gesture control defaults OFF — explicit opt-in only, matches voicePreference.ts.
@@ -8,6 +9,15 @@ export function getWebcamGestureEnabled(): boolean {
 
 export function setWebcamGestureEnabled(enabled: boolean): void {
   localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0')
+}
+
+// Physical-glove (Track 2) gesture control — also defaults OFF, experimental.
+export function getGloveGestureEnabled(): boolean {
+  return localStorage.getItem(GLOVE_KEY) === '1'
+}
+
+export function setGloveGestureEnabled(enabled: boolean): void {
+  localStorage.setItem(GLOVE_KEY, enabled ? '1' : '0')
 }
 
 // Without this, getUserMedia just takes whatever the OS/browser considers
