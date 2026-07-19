@@ -18,8 +18,14 @@ quality, which is already commoditized (Meshy, Tripo, Rodin).
   auth only: email/password + Google OAuth + GitHub OAuth, verified working
   end-to-end
 - Design system: dark-first, navy `#0b0f1a` background, teal `#2dd4bf`
-  primary, coral `#ff7a50` accent, monospace display font for data
-  ("technical instrument" identity), faint blueprint-grid background.
+  primary, coral `#ff7a50` accent, faint blueprint-grid background.
+  Fonts (adopted from the Lovable landing design, loaded via Google Fonts in
+  `index.html`): **Instrument Serif** display (`font-display`), **Inter** body
+  (`font-sans`), **JetBrains Mono** for data/technical readouts (`font-mono`,
+  the "technical instrument" identity now lives in the mono data font, not the
+  headings). Brand colour tokens `--teal`/`--coral`/`--navy`/`--navy-deep`/
+  `--blueprint` are exposed as Tailwind utilities (`text-teal`, `bg-coral`,
+  `bg-navy-deep`, …) alongside the shadcn semantic tokens.
   Signature surface treatments in `index.css`: `.clay` (claymorphism — soft
   dual shadows, puffy rounded tiles, used for bento-grid dashboard/feature
   tiles) and `.liquid-glass` (frosted translucent panels with an animated
