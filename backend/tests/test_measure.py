@@ -26,7 +26,7 @@ def test_generate_job_record_includes_dimensions(client, sample_image_bytes, mon
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
 

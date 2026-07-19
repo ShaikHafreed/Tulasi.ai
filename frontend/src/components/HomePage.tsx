@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
+import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, uploadImages, uploadThumbnail } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
@@ -586,8 +586,9 @@ function ScanView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleFileSelected = useCallback(
-    async (file: File) => {
+  const handleFilesSelected = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return
       setPhase('uploading')
       setError(null)
       setJobId(null)
@@ -603,10 +604,10 @@ function ScanView({
       autoPrintChecked.current = false
       thumbnailUploaded.current = false
       sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
-      pushEvent('scan_started', { file_name: file.name })
+      pushEvent('scan_started', { file_name: files[0].name, photo_count: files.length })
 
       try {
-        const { job_id: newJobId } = await uploadImage(file)
+        const { job_id: newJobId } = await uploadImages(files)
         sessionStorage.setItem(ACTIVE_JOB_STORAGE_KEY, newJobId)
         setJobId(newJobId)
         setPhase('job')
@@ -626,7 +627,7 @@ function ScanView({
 
       {phase !== 'done' && (
         <UploadZone
-          onFileSelected={handleFileSelected}
+          onFilesSelected={handleFilesSelected}
           onValidationError={(message) =>
             setError({ error_code: 'client_validation', human_message: message, suggested_action: 'Choose a different photo.' })
           }

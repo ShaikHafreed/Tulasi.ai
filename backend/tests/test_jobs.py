@@ -29,7 +29,7 @@ def test_mock_job_completes_successfully(client, sample_image_bytes, monkeypatch
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
 
@@ -53,7 +53,7 @@ def test_mock_job_writes_scan_when_authorized(client, sample_image_bytes, monkey
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
         headers={"Authorization": "Bearer fake-token"},
     )
     job_id = response.json()["job_id"]
@@ -74,7 +74,7 @@ def test_mock_job_skips_scan_write_without_authorization(client, sample_image_by
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
     _poll_until_done(client, job_id)
@@ -108,7 +108,7 @@ def test_real_mode_job_completes_successfully(client, sample_image_bytes, monkey
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
 
@@ -134,7 +134,7 @@ def test_real_mode_job_fails_when_meshy_reports_failure(client, sample_image_byt
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
 

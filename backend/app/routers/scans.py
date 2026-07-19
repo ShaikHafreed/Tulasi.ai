@@ -83,7 +83,11 @@ async def delete_scan(job_id: str, authorization: str | None = Header(default=No
             suggested_action="Try again in a moment.",
         )
 
-    for suffix in (".glb", "_source.jpg", "_source.png", "_thumb.jpg"):
+    suffixes = [".glb", "_source.jpg", "_source.png", "_thumb.jpg"]
+    # Extra multi-photo source files: _source2/_source3/_source4 (.jpg/.png).
+    for n in range(2, 5):
+        suffixes.extend([f"_source{n}.jpg", f"_source{n}.png"])
+    for suffix in suffixes:
         path = STORAGE_DIR / f"{job_id}{suffix}"
         if path.exists():
             path.unlink()

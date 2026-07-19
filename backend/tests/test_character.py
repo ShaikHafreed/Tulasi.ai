@@ -3,7 +3,7 @@ def test_rig_rejects_job_without_meshy_task_id(client, sample_image_bytes, monke
 
     response = client.post(
         "/api/generate",
-        files={"image": ("test.png", sample_image_bytes, "image/png")},
+        files={"images": ("test.png", sample_image_bytes, "image/png")},
     )
     job_id = response.json()["job_id"]
 

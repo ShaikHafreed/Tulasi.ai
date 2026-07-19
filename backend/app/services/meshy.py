@@ -65,23 +65,38 @@ async def _request_with_retry(method: str, url: str, **kwargs) -> httpx.Response
     raise RuntimeError(f"{method} {url} kept failing: {response.status_code} {response.text}")
 
 
-async def _create_task(image_bytes: bytes, content_type: str) -> str:
-    data_uri = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode()}"
+def _data_uri(image_bytes: bytes, content_type: str) -> str:
+    return f"data:{content_type};base64,{base64.b64encode(image_bytes).decode()}"
+
+
+async def _create_task(images: list[tuple[bytes, str]]) -> tuple[str, str]:
+    """Creates a Meshy task from 1–4 images. A single image uses the cheaper
+    image-to-3d endpoint; multiple images use multi-image-to-3d (better
+    geometry from several angles). Returns (task_id, endpoint) so polling hits
+    the matching endpoint."""
+    uris = [_data_uri(image_bytes, content_type) for image_bytes, content_type in images]
+    if len(uris) == 1:
+        endpoint = "image-to-3d"
+        body: dict = {"image_url": uris[0], "enable_pbr": False}
+    else:
+        endpoint = "multi-image-to-3d"
+        body = {"image_urls": uris, "enable_pbr": False}
+
     response = await _request_with_retry(
         "POST",
-        f"{MESHY_API_BASE}/image-to-3d",
+        f"{MESHY_API_BASE}/{endpoint}",
         headers={"Authorization": f"Bearer {_api_key()}"},
-        json={"image_url": data_uri, "enable_pbr": False},
+        json=body,
     )
     if response.status_code >= 400:
         raise RuntimeError(f"Meshy task creation failed: {response.status_code} {response.text}")
-    return response.json()["result"]
+    return response.json()["result"], endpoint
 
 
-async def _get_task(task_id: str) -> dict:
+async def _get_task(task_id: str, endpoint: str) -> dict:
     response = await _request_with_retry(
         "GET",
-        f"{MESHY_API_BASE}/image-to-3d/{task_id}",
+        f"{MESHY_API_BASE}/{endpoint}/{task_id}",
         headers={"Authorization": f"Bearer {_api_key()}"},
     )
     if response.status_code >= 400:
@@ -126,13 +141,13 @@ async def _run_mock(job_id: str) -> None:
     )
 
 
-async def _run_real(job_id: str, image_bytes: bytes, content_type: str) -> None:
-    task_id = await _create_task(image_bytes, content_type)
+async def _run_real(job_id: str, images: list[tuple[bytes, str]]) -> None:
+    task_id, endpoint = await _create_task(images)
     job_store.update(job_id, meshy_task_id=task_id)
     deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
 
     while time.monotonic() < deadline:
-        payload = await _get_task(task_id)
+        payload = await _get_task(task_id, endpoint)
         status = payload.get("status")
         progress = payload.get("progress") or 0
 
@@ -153,12 +168,14 @@ async def _run_real(job_id: str, image_bytes: bytes, content_type: str) -> None:
     raise TimeoutError("Meshy job timed out")
 
 
-async def process_job(job_id: str, image_bytes: bytes, content_type: str, access_token: str | None) -> None:
+async def process_job(job_id: str, images: list[tuple[bytes, str]], access_token: str | None) -> None:
     try:
         if _mock_enabled():
+            # Mock ignores the image count entirely — it just serves the
+            # fixture — so multiple photos never error in mock mode.
             await _run_mock(job_id)
         else:
-            await _run_real(job_id, image_bytes, content_type)
+            await _run_real(job_id, images)
     except TimeoutError:
         logger.warning("job %s timed out", job_id)
         job_store.update(

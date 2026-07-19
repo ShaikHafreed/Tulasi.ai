@@ -41,9 +41,10 @@ async function authHeaders(): Promise<HeadersInit> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-export async function uploadImage(file: File): Promise<GenerateAccepted> {
+export async function uploadImages(files: File[]): Promise<GenerateAccepted> {
   const formData = new FormData()
-  formData.append('image', file)
+  // 1–4 photos under the same "images" field; the first is the primary view.
+  for (const file of files) formData.append('images', file)
 
   const response = await fetch('/api/generate', {
     method: 'POST',
