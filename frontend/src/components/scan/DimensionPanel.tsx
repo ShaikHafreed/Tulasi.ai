@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import UnitToggle from '@/components/UnitToggle'
+import { toDisplayValue, unitLabel, unitToMm, useUnit } from '@/lib/units'
 import type { MeasurementResult } from '@/lib/types'
 
 const FALLBACK_MM = { width: 50, height: 50, depth: 40 }
@@ -43,6 +45,7 @@ export default function DimensionPanel({
   const [aspectLocked, setAspectLocked] = useState(true)
   const [ratio, setRatio] = useState(1)
   const appliedNonce = useRef<number | null>(null)
+  const [unit, setUnit] = useUnit()
 
   useEffect(() => {
     if (!measurement) return
@@ -69,34 +72,44 @@ export default function DimensionPanel({
 
   const isEstimated = !measurement || measurement.reference_type === 'none'
 
-  function setWidth(value: number) {
-    if (Number.isNaN(value) || value <= 0) return
+  // Inputs display in the active unit; storage stays in mm. Convert the typed
+  // display value straight back to mm — the primary axis is exact (no
+  // rounding), so inch editing introduces no drift.
+  const step = unit === 'inch' ? 0.001 : 0.1
+
+  function setWidth(displayValue: number) {
+    if (Number.isNaN(displayValue) || displayValue <= 0) return
+    const width_mm = unitToMm(displayValue, unit)
     setDims((prev) => ({
       ...prev,
-      width_mm: value,
-      height_mm: aspectLocked ? Number((value / ratio).toFixed(1)) : prev.height_mm,
+      width_mm,
+      height_mm: aspectLocked ? Number((width_mm / ratio).toFixed(2)) : prev.height_mm,
     }))
   }
 
-  function setHeight(value: number) {
-    if (Number.isNaN(value) || value <= 0) return
+  function setHeight(displayValue: number) {
+    if (Number.isNaN(displayValue) || displayValue <= 0) return
+    const height_mm = unitToMm(displayValue, unit)
     setDims((prev) => ({
       ...prev,
-      height_mm: value,
-      width_mm: aspectLocked ? Number((value * ratio).toFixed(1)) : prev.width_mm,
+      height_mm,
+      width_mm: aspectLocked ? Number((height_mm * ratio).toFixed(2)) : prev.width_mm,
     }))
   }
 
-  function setDepth(value: number) {
-    if (Number.isNaN(value) || value <= 0) return
-    setDims((prev) => ({ ...prev, depth_mm: value }))
+  function setDepth(displayValue: number) {
+    if (Number.isNaN(displayValue) || displayValue <= 0) return
+    setDims((prev) => ({ ...prev, depth_mm: unitToMm(displayValue, unit) }))
   }
 
   return (
     <Card className="w-full max-w-md gap-4 p-6">
       <div className="flex items-center justify-between">
         <p className="font-semibold">Dimensions</p>
-        {isEstimated && <Badge variant="amber">Estimated</Badge>}
+        <div className="flex items-center gap-2">
+          {isEstimated && <Badge variant="amber">Estimated</Badge>}
+          <UnitToggle unit={unit} onChange={setUnit} />
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -105,28 +118,30 @@ export default function DimensionPanel({
 
       <div className="grid grid-cols-3 gap-3">
         <div className="grid gap-1.5">
-          <Label htmlFor="dim-width">Width (mm)</Label>
+          <Label htmlFor="dim-width">Width ({unitLabel(unit)})</Label>
           <Input
             id="dim-width"
             type="number"
             min={0}
-            value={dims.width_mm}
+            step={step}
+            value={toDisplayValue(dims.width_mm, unit)}
             onChange={(event) => setWidth(event.target.valueAsNumber)}
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="dim-height">Height (mm)</Label>
+          <Label htmlFor="dim-height">Height ({unitLabel(unit)})</Label>
           <Input
             id="dim-height"
             type="number"
             min={0}
-            value={dims.height_mm}
+            step={step}
+            value={toDisplayValue(dims.height_mm, unit)}
             onChange={(event) => setHeight(event.target.valueAsNumber)}
           />
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="dim-depth" className="justify-between">
-            Depth (mm)
+            Depth ({unitLabel(unit)})
             <Badge variant="amber" className="px-1.5 py-0 text-[9px]">
               Est.
             </Badge>
@@ -135,7 +150,8 @@ export default function DimensionPanel({
             id="dim-depth"
             type="number"
             min={0}
-            value={dims.depth_mm}
+            step={step}
+            value={toDisplayValue(dims.depth_mm, unit)}
             onChange={(event) => setDepth(event.target.valueAsNumber)}
           />
         </div>

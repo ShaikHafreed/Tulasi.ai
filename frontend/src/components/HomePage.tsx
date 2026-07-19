@@ -11,6 +11,8 @@ import WebcamGesturePanel from './scan/WebcamGesturePanel'
 import GloveGesturePanel from './scan/GloveGesturePanel'
 import ChatPanel from './assistant/ChatPanel'
 import CommandPalette from './CommandPalette'
+import UnitToggle from './UnitToggle'
+import { formatDimensions, toDisplayValue, unitLabel, useUnit } from '../lib/units'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -145,6 +147,7 @@ function LibraryView({
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [viewingScan, setViewingScan] = useState<Scan | null>(null)
+  const [unit] = useUnit()
   const [deleting, setDeleting] = useState(false)
 
   async function confirmDelete(scan: Scan) {
@@ -198,7 +201,7 @@ function LibraryView({
                   <p className="truncate text-sm font-medium">{scan.object_name ?? scan.job_id}</p>
                   <p className="font-display text-[0.78rem] text-muted-foreground">
                     {scan.width_mm && scan.height_mm
-                      ? `${scan.width_mm.toFixed(1)} × ${scan.height_mm.toFixed(1)} mm`
+                      ? `${toDisplayValue(scan.width_mm, unit)} × ${toDisplayValue(scan.height_mm, unit)} ${unitLabel(unit)}`
                       : '—'}
                   </p>
                 </div>
@@ -242,7 +245,7 @@ function LibraryView({
           {viewingScan?.model_url && <ModelViewer modelUrl={viewingScan.model_url} />}
           <p className="font-display text-sm text-muted-foreground">
             {viewingScan?.width_mm && viewingScan?.height_mm
-              ? `${viewingScan.width_mm.toFixed(1)} × ${viewingScan.height_mm.toFixed(1)} × ${(viewingScan.depth_mm ?? 0).toFixed(1)} mm`
+              ? formatDimensions(viewingScan.width_mm, viewingScan.height_mm, viewingScan.depth_mm ?? 0, unit)
               : 'No measured dimensions'}
           </p>
         </DialogContent>
@@ -257,6 +260,7 @@ function LibraryView({
 function ExportCard({ jobId, dims }: { jobId: string; dims: Dimensions | null }) {
   const [busy, setBusy] = useState<'stl' | 'glb' | null>(null)
   const [failed, setFailed] = useState(false)
+  const [unit] = useUnit()
 
   async function handleExport(format: 'stl' | 'glb') {
     if (!dims || busy) return
@@ -278,7 +282,7 @@ function ExportCard({ jobId, dims }: { jobId: string; dims: Dimensions | null })
         <p className="text-sm font-semibold">Export</p>
         {dims && (
           <span className="font-display text-[11px] text-muted-foreground">
-            at {dims.width_mm.toFixed(1)} × {dims.height_mm.toFixed(1)} × {dims.depth_mm.toFixed(1)} mm
+            at {formatDimensions(dims.width_mm, dims.height_mm, dims.depth_mm, unit)}
           </span>
         )}
       </div>
@@ -632,6 +636,7 @@ function SettingsView({
   onToggleGlove: (next: boolean) => void
 }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
+  const [unit, setUnit] = useUnit()
 
   return (
     <>
@@ -642,6 +647,19 @@ function SettingsView({
           Sign out
         </Button>
       </EmptyCard>
+
+      <Card className="mt-4 max-w-[480px] gap-3 p-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold">Measurement units</p>
+            <p className="text-sm text-muted-foreground">
+              Display dimensions in millimetres or inches. Stored internally in mm either way — this only changes the
+              display.
+            </p>
+          </div>
+          <UnitToggle unit={unit} onChange={setUnit} />
+        </div>
+      </Card>
 
       <Card className="mt-4 max-w-[480px] gap-3 p-8">
         <div className="flex items-center justify-between">
