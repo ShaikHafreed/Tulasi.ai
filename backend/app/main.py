@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .errors import AppError
-from .routers import assistant, character, generate, jobs, measure, scans, voice
+from .routers import assistant, character, generate, jobs, measure, scans, share, voice
 from .services.meshy import STORAGE_DIR
 
 # OpenVoice's phoneme cleaner prints IPA characters straight to stdout; on
@@ -46,5 +46,6 @@ app.include_router(assistant.router)
 app.include_router(voice.router)
 app.include_router(character.router)
 app.include_router(scans.router)
+app.include_router(share.router)
 
 app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")

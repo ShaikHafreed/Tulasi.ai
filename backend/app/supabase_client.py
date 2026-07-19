@@ -35,6 +35,17 @@ def _client_as(access_token: str) -> Client:
     return client
 
 
+def _anon_client() -> Client:
+    # No user token — acts as the `anon` role. Only the "public can read shared
+    # scans" RLS policy is reachable this way, so it can read a shared row but
+    # nothing private and nothing writable.
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    if not url or not key:
+        raise RuntimeError("SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are not set")
+    return create_client(url, key)
+
+
 def insert_scan(
     access_token: str,
     *,
@@ -78,6 +89,30 @@ def insert_assistant_feedback(access_token: str, *, message: str, rating: str) -
 def update_scan_image(access_token: str, *, job_id: str, image_url: str) -> None:
     client = _client_as(access_token)
     client.table("scans").update({"image_url": image_url}).eq("job_id", job_id).execute()
+
+
+def set_share_slug(access_token: str, *, job_id: str, slug: str | None) -> None:
+    # Owner-scoped (user JWT → RLS). Pass slug=None to disable sharing.
+    client = _client_as(access_token)
+    client.table("scans").update({"share_slug": slug}).eq("job_id", job_id).execute()
+
+
+_PUBLIC_SHARE_FIELDS = "object_name,model_url,width_mm,height_mm,depth_mm,depth_estimated"
+
+
+def get_shared_scan(slug: str) -> dict | None:
+    # Public read via the anon role — returns only non-sensitive fields for the
+    # one row carrying this exact slug, or None.
+    client = _anon_client()
+    result = (
+        client.table("scans")
+        .select(_PUBLIC_SHARE_FIELDS)
+        .eq("share_slug", slug)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
 
 
 def delete_scan(access_token: str, *, job_id: str) -> None:

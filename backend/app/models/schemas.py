@@ -129,3 +129,16 @@ class ExportRequest(BaseModel):
     width_mm: float | None = None
     height_mm: float | None = None
     depth_mm: float | None = None
+
+
+class ShareResponse(BaseModel):
+    slug: str
+
+
+class SharedScan(BaseModel):
+    object_name: str | None = None
+    model_url: str | None = None
+    width_mm: float | None = None
+    height_mm: float | None = None
+    depth_mm: float | None = None
+    depth_estimated: bool = True

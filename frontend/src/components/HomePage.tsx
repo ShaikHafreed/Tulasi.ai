@@ -21,7 +21,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, deleteScan, exportScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
+import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, uploadImage, uploadThumbnail } from '@/lib/api'
+import { Input } from '@/components/ui/input'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
@@ -261,9 +262,90 @@ function LibraryView({
               ? formatDimensions(viewingScan.width_mm, viewingScan.height_mm, viewingScan.depth_mm ?? 0, unit)
               : 'No measured dimensions'}
           </p>
+          {viewingScan && (
+            <ShareControl key={viewingScan.id} jobId={viewingScan.job_id} initialSlug={viewingScan.share_slug} />
+          )}
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+// Per-scan read-only sharing. Off by default; enabling mints an unguessable
+// public slug, disabling clears it. Keyed by scan id so it reseeds per scan.
+function ShareControl({ jobId, initialSlug }: { jobId: string; initialSlug: string | null }) {
+  const [slug, setSlug] = useState<string | null>(initialSlug)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const link = slug ? `${window.location.origin}/share/${slug}` : null
+
+  async function enable() {
+    setBusy(true)
+    try {
+      setSlug(await enableShare(jobId))
+    } catch {
+      // Leave it off — the button stays available to retry.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function disable() {
+    setBusy(true)
+    try {
+      await disableShare(jobId)
+      setSlug(null)
+    } catch {
+      // no-op
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copy() {
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard may be blocked — the field is selectable as a fallback.
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Share read-only link</p>
+          <p className="text-xs text-muted-foreground">
+            Anyone with the link sees the model and dimensions — no editing, no account. Off by default.
+          </p>
+        </div>
+        {slug ? (
+          <Button variant="outline" size="sm" onClick={disable} disabled={busy}>
+            Disable
+          </Button>
+        ) : (
+          <Button variant="warm" size="sm" onClick={enable} disabled={busy}>
+            Get link
+          </Button>
+        )}
+      </div>
+      {link && (
+        <div className="flex items-center gap-2">
+          <Input
+            readOnly
+            value={link}
+            onFocus={(event) => event.currentTarget.select()}
+            className="font-mono text-xs"
+          />
+          <Button variant="outline" size="sm" onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 

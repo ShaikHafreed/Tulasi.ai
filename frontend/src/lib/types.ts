@@ -83,4 +83,15 @@ export interface Scan {
   depth_mm: number | null
   depth_estimated: boolean
   created_at: string
+  // Unguessable slug when the scan is shared read-only; null when private.
+  share_slug: string | null
+}
+
+export interface SharedScan {
+  object_name: string | null
+  model_url: string | null
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  depth_estimated: boolean
 }

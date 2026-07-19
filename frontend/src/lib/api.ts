@@ -9,6 +9,7 @@ import type {
   JobRecord,
   MeasurementResult,
   RigRecord,
+  SharedScan,
 } from './types'
 import type { TulasiEvent } from './tulasiEvents'
 
@@ -204,6 +205,31 @@ export async function deleteScan(jobId: string): Promise<void> {
   if (!response.ok) {
     await parseErrorOrThrow(response)
   }
+}
+
+export async function enableShare(jobId: string): Promise<string> {
+  const response = await fetch(`/api/scans/${jobId}/share`, {
+    method: 'POST',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) await parseErrorOrThrow(response)
+  const body = (await response.json()) as { slug: string }
+  return body.slug
+}
+
+export async function disableShare(jobId: string): Promise<void> {
+  const response = await fetch(`/api/scans/${jobId}/share`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!response.ok) await parseErrorOrThrow(response)
+}
+
+// Public — no auth header, used by the /share/{slug} page.
+export async function getSharedScan(slug: string): Promise<SharedScan> {
+  const response = await fetch(`/api/share/${slug}`)
+  if (!response.ok) await parseErrorOrThrow(response)
+  return response.json()
 }
 
 export interface ExportDimensions {
