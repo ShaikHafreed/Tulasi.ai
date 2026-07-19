@@ -41,6 +41,7 @@ def insert_scan(
     job_id: str,
     model_url: str,
     image_url: str | None = None,
+    source_image_url: str | None = None,
     width_mm: float | None = None,
     height_mm: float | None = None,
     depth_mm: float | None = None,
@@ -53,7 +54,11 @@ def insert_scan(
             "user_id": user_id,
             "job_id": job_id,
             "model_url": model_url,
+            # image_url gets overwritten with the 3D-render thumbnail once the
+            # viewer captures it; source_image_url keeps the original photo so
+            # the before/after slider has both sides.
             "image_url": image_url,
+            "source_image_url": source_image_url,
             "width_mm": width_mm,
             "height_mm": height_mm,
             "depth_mm": depth_mm,

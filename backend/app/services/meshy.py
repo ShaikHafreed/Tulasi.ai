@@ -196,6 +196,10 @@ async def process_job(job_id: str, image_bytes: bytes, content_type: str, access
                     job_id=job_id,
                     model_url=record.model_url,
                     image_url=record.image_url,
+                    # At insert time record.image_url is still the source photo
+                    # (the thumbnail render overwrites image_url later) — keep a
+                    # permanent copy of it for the before/after slider.
+                    source_image_url=record.image_url,
                     width_mm=dimensions.width_mm if dimensions else None,
                     height_mm=dimensions.height_mm if dimensions else None,
                     depth_mm=dimensions.depth_mm if dimensions else None,

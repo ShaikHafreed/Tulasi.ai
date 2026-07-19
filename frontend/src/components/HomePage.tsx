@@ -6,6 +6,7 @@ import UploadZone from './scan/UploadZone'
 import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
+import BeforeAfterSlider from './scan/BeforeAfterSlider'
 import CharacterRig from './scan/CharacterRig'
 import WebcamGesturePanel from './scan/WebcamGesturePanel'
 import GloveGesturePanel from './scan/GloveGesturePanel'
@@ -243,6 +244,14 @@ function LibraryView({
         <DialogContent className="max-w-xl p-6">
           <DialogTitle>{viewingScan?.object_name ?? viewingScan?.job_id}</DialogTitle>
           {viewingScan?.model_url && <ModelViewer modelUrl={viewingScan.model_url} />}
+          {viewingScan?.source_image_url && viewingScan?.image_url && (
+            <div className="flex flex-col gap-1.5">
+              <p className="font-display text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+                Photo → model
+              </p>
+              <BeforeAfterSlider before={viewingScan.source_image_url} after={viewingScan.image_url} />
+            </div>
+          )}
           <p className="font-display text-sm text-muted-foreground">
             {viewingScan?.width_mm && viewingScan?.height_mm
               ? formatDimensions(viewingScan.width_mm, viewingScan.height_mm, viewingScan.depth_mm ?? 0, unit)

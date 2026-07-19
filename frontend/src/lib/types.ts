@@ -74,6 +74,10 @@ export interface Scan {
   object_name: string | null
   model_url: string | null
   image_url: string | null
+  // The original uploaded photo, kept even after image_url is overwritten with
+  // the 3D render — powers the before/after slider. Null for scans created
+  // before this column existed.
+  source_image_url: string | null
   width_mm: number | null
   height_mm: number | null
   depth_mm: number | null
