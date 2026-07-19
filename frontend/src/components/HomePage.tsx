@@ -10,6 +10,7 @@ import CharacterRig from './scan/CharacterRig'
 import WebcamGesturePanel from './scan/WebcamGesturePanel'
 import GloveGesturePanel from './scan/GloveGesturePanel'
 import ChatPanel from './assistant/ChatPanel'
+import CommandPalette from './CommandPalette'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -737,6 +738,16 @@ export default function HomePage({ session }: { session: Session }) {
     refreshScans()
   }, [refreshScans])
 
+  // Flip + persist together, the same pair Settings does, so the palette and
+  // Settings toggle stay in sync.
+  const toggleGesture = useCallback(() => {
+    setGestureEnabled((prev) => {
+      const next = !prev
+      setWebcamGestureEnabled(next)
+      return next
+    })
+  }, [])
+
   return (
     <div className="min-h-screen">
       <Sidebar
@@ -777,6 +788,7 @@ export default function HomePage({ session }: { session: Session }) {
         </div>
       </main>
       <ChatPanel />
+      <CommandPalette onNavigate={setView} onToggleGesture={toggleGesture} gestureEnabled={gestureEnabled} />
     </div>
   )
 }

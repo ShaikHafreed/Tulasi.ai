@@ -4,6 +4,7 @@ import { OrbitControls, Stage, useGLTF } from '@react-three/drei'
 import { Box, Layers, Maximize2, Minimize2 } from 'lucide-react'
 import * as THREE from 'three'
 import { cn } from '@/lib/utils'
+import { registerCommandHandlers } from '@/lib/tulasiCommands'
 
 export interface RotationTrigger {
   axis: 'x' | 'y'
@@ -178,6 +179,22 @@ export default function ModelViewer({
   function exitPresentation() {
     if (document.fullscreenElement) void document.exitFullscreen()
   }
+
+  // Expose presentation toggle through the shared command whitelist so the
+  // command palette (and the assistant) can trigger it — using live DOM
+  // fullscreen state, not React state, so the [] closure never goes stale.
+  // Removed on unmount rather than clearing all handlers (that's ScanView's
+  // job for its own set).
+  useEffect(() => {
+    registerCommandHandlers({
+      togglePresentation: () => {
+        if (document.fullscreenElement === containerRef.current) exitPresentation()
+        else void enterPresentation()
+      },
+    })
+    return () => registerCommandHandlers({ togglePresentation: undefined })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div

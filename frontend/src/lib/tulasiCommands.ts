@@ -5,6 +5,7 @@ export type CommandName =
   | 'runPrintCheck'
   | 'exportModel'
   | 'addReferenceHint'
+  | 'togglePresentation'
 
 export interface SetDimensionsParams {
   width_mm: number
@@ -42,6 +43,7 @@ type CommandParams = {
   runPrintCheck: Record<string, never>
   exportModel: ExportModelParams
   addReferenceHint: AddReferenceHintParams
+  togglePresentation: Record<string, never>
 }
 
 type CommandHandlers = {
