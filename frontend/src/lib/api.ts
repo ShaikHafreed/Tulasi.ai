@@ -10,6 +10,7 @@ import type {
   MeasurementResult,
   RigRecord,
   SharedScan,
+  SubjectBox,
 } from './types'
 import type { TulasiEvent } from './tulasiEvents'
 
@@ -39,6 +40,16 @@ async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Suggests a crop box around the main object in a photo, so the user can
+// confirm what to model before generating.
+export async function detectSubject(file: File): Promise<SubjectBox> {
+  const formData = new FormData()
+  formData.append('image', file)
+  const response = await fetch('/api/detect-subject', { method: 'POST', body: formData })
+  if (!response.ok) await parseErrorOrThrow(response)
+  return response.json()
 }
 
 export async function uploadImages(files: File[]): Promise<GenerateAccepted> {

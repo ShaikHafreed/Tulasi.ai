@@ -131,6 +131,16 @@ class ExportRequest(BaseModel):
     depth_mm: float | None = None
 
 
+class SubjectBox(BaseModel):
+    # Normalised (0..1) suggested crop around the main object; `confident` is
+    # False when it's just a centred fallback.
+    x: float
+    y: float
+    w: float
+    h: float
+    confident: bool
+
+
 class ShareResponse(BaseModel):
     slug: str
 

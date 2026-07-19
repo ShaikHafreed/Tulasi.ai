@@ -5,8 +5,8 @@ from fastapi import APIRouter, File, Header, UploadFile
 
 from .. import job_store
 from ..errors import AppError
-from ..models.schemas import GenerateAccepted
-from ..services import calibrate, meshy
+from ..models.schemas import GenerateAccepted, SubjectBox
+from ..services import calibrate, meshy, subject
 from ..services.uploads import validate_content_type, validate_size
 from ..supabase_client import bearer_token
 
@@ -21,6 +21,17 @@ _EXTENSION_BY_CONTENT_TYPE = {
     "image/jpg": ".jpg",
     "image/png": ".png",
 }
+
+
+@router.post("/detect-subject", response_model=SubjectBox)
+async def detect_subject(image: UploadFile = File(...)) -> SubjectBox:
+    # Suggests where the main object is so the user can confirm/adjust the crop
+    # before generating. No auth, no job — pure analysis of the posted image.
+    validate_content_type(image.content_type)
+    data = await image.read()
+    validate_size(len(data))
+    box = await asyncio.to_thread(subject.suggest_box, data)
+    return SubjectBox(**box)
 
 
 @router.post("/generate", status_code=202, response_model=GenerateAccepted)

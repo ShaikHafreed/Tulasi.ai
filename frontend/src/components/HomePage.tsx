@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { Download, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import UploadZone from './scan/UploadZone'
+import SubjectSelect from './scan/SubjectSelect'
 import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
@@ -406,7 +407,8 @@ function ScanView({
   gestureEnabled: boolean
   gloveEnabled: boolean
 }) {
-  const [phase, setPhase] = useState<'idle' | 'uploading' | 'job' | 'done'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'selecting' | 'uploading' | 'job' | 'done'>('idle')
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [job, setJob] = useState<JobRecord | null>(null)
   const [error, setError] = useState<ErrorDetail | null>(null)
@@ -503,6 +505,7 @@ function ScanView({
     clearCommandHandlers()
     sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
     setPhase('idle')
+    setPendingFiles(null)
     setJobId(null)
     setJob(null)
     setError(null)
@@ -586,9 +589,17 @@ function ScanView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleFilesSelected = useCallback(
+  // Picking photos goes to the "confirm your object" step first — nothing is
+  // uploaded or generated until the user has framed what they actually want.
+  const handleFilesSelected = useCallback((files: File[]) => {
+    if (files.length === 0) return
+    setError(null)
+    setPendingFiles(files)
+    setPhase('selecting')
+  }, [])
+
+  const startGeneration = useCallback(
     async (files: File[]) => {
-      if (files.length === 0) return
       setPhase('uploading')
       setError(null)
       setJobId(null)
@@ -625,14 +636,31 @@ function ScanView({
       <Eyebrow>New scan</Eyebrow>
       <PageTitle>Upload a photo</PageTitle>
 
-      {phase !== 'done' && (
+      {phase === 'idle' && (
         <UploadZone
           onFilesSelected={handleFilesSelected}
           onValidationError={(message) =>
             setError({ error_code: 'client_validation', human_message: message, suggested_action: 'Choose a different photo.' })
           }
-          disabled={phase === 'uploading' || phase === 'job'}
         />
+      )}
+
+      {phase === 'selecting' && pendingFiles && (
+        <SubjectSelect
+          files={pendingFiles}
+          onBack={() => {
+            setPendingFiles(null)
+            setPhase('idle')
+          }}
+          onConfirm={(cropped) => startGeneration(cropped)}
+        />
+      )}
+
+      {phase === 'uploading' && (
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+          Uploading…
+        </div>
       )}
 
       {phase === 'job' && job && <div className="mt-6"><ProgressStages job={job} /></div>}

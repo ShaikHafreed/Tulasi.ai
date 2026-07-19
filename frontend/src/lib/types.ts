@@ -87,6 +87,15 @@ export interface Scan {
   share_slug: string | null
 }
 
+// Normalised suggested crop box (0..1) around the main object.
+export interface SubjectBox {
+  x: number
+  y: number
+  w: number
+  h: number
+  confident: boolean
+}
+
 export interface SharedScan {
   object_name: string | null
   model_url: string | null
