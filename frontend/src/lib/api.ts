@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { markExported } from './onboarding'
 import type {
   AnimationPreset,
   AnimationRecord,
@@ -235,4 +236,5 @@ export async function exportScan(
   link.download = `tulasi-${jobId}.${format}`
   link.click()
   URL.revokeObjectURL(url)
+  markExported()
 }

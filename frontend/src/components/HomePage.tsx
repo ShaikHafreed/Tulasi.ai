@@ -7,6 +7,8 @@ import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
 import BeforeAfterSlider from './scan/BeforeAfterSlider'
+import OnboardingChecklist from './OnboardingChecklist'
+import { markGestureTried } from '../lib/onboarding'
 import CharacterRig from './scan/CharacterRig'
 import WebcamGesturePanel from './scan/WebcamGesturePanel'
 import GloveGesturePanel from './scan/GloveGesturePanel'
@@ -102,6 +104,8 @@ function DashboardHome({
     <>
       <Eyebrow>Dashboard</Eyebrow>
       <PageTitle>Welcome back, {name}.</PageTitle>
+
+      <OnboardingChecklist hasScans={(scanCount ?? 0) > 0} onGoToScan={onGoToScan} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.3fr_1fr] sm:grid-rows-[auto_auto]">
         <div className="clay clay-coral row-span-2 flex flex-col justify-between gap-6 p-8">
@@ -704,6 +708,7 @@ function SettingsView({
             onCheckedChange={(next) => {
               onToggleGesture(next)
               setWebcamGestureEnabled(next)
+              if (next) markGestureTried()
             }}
           />
         </div>
@@ -771,6 +776,7 @@ export default function HomePage({ session }: { session: Session }) {
     setGestureEnabled((prev) => {
       const next = !prev
       setWebcamGestureEnabled(next)
+      if (next) markGestureTried()
       return next
     })
   }, [])
