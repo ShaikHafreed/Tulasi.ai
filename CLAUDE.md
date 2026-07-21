@@ -38,12 +38,43 @@ quality, which is already commoditized (Meshy, Tripo, Rodin).
 - `AuthCard.tsx` — shadcn Dialog, real OAuth wired
 - `HomePage.tsx` + `Sidebar.tsx` — post-signin dashboard, horizontal nav with
   hover-tracked sliding indicator, four sections: Dashboard (real scan count
-  from Supabase), Library (lists real `scans` table rows), New scan (being
-  built now — see roadmap), Settings (email/provider/sign out)
+  from Supabase + onboarding checklist), Library (real `scans` rows,
+  click-to-view with before/after slider + share toggle), New scan (full
+  pipeline, live), Settings (units, gesture/voice toggles, sign out)
+
+**Shipped feature phase — all live, tested, pushed to `origin/main`:**
+- Full New-scan pipeline: `UploadZone` (up to 4 labelled angle photos) →
+  "confirm your object" crop step (`SubjectSelect`/`SubjectCropper`, OpenCV
+  box suggestion in `services/subject.py` via `POST /api/detect-subject`) →
+  `ProgressStages` → `ModelViewer` → `DimensionPanel`. Writes real `scans`
+  rows (retains the original photo for the slider).
+- Backend routers: `generate/jobs/measure/scans/share/assistant/character/
+  voice`; services: `meshy/calibrate/validate/exporter/subject/rag/assistant/
+  voice`. Meshy single- **and** multi-image (`multi-image-to-3d`).
+- Presentation mode; AI assistant (Stage A); webcam + glove gestures; RAG
+  over Meshy docs; character rigging; real-scale STL/GLB export
+  (`services/exporter.py`, trimesh).
+- Command palette (⌘K), mm/inch unit toggle (`lib/units.ts`), before/after
+  slider, first-run onboarding checklist, shareable read-only `/share/{slug}`.
+- Lovable landing design ported (scroll sketch→model hero) with the
+  mug-handle-outside and blueprint-grid fixes applied.
+
+**Not yet built / needs revision (next work):**
+- Claude-vision object recognition (`routers/recognize.py` +
+  `services/recognize.py` + `MOCK_RECOGNIZE` + `ObjectRecognitionStep`) —
+  today's confirm step is an OpenCV *crop*, not labelled multi-object
+  recognition with a pick/confirm UX.
+- Webcam gestures are currently **two-hand** (`lib/webcamGesture.ts`,
+  `MAX_HANDS=2`); target is **single-hand only** + skip-low-confidence-frames
+  + 150ms debounce + deadzones + ignore any second hand. No unified
+  `GestureStatusIndicator` component yet.
 
 **`scans` table** (Supabase, RLS enabled, FK `user_id -> auth.users.id`):
-`id, user_id, job_id, object_name, model_url, width_mm, height_mm, depth_mm,
-depth_estimated, created_at`.
+`id, user_id, job_id, object_name, model_url, image_url, source_image_url,
+width_mm, height_mm, depth_mm, depth_estimated, share_slug, created_at`.
+(`source_image_url` = original photo for the before/after slider; `share_slug`
+= unguessable public-share id, null when private, with an anon-role RLS read
+policy scoped to rows that have a slug.)
 
 **Already provisioned, reuse — do not recreate:**
 - Supabase project + `scans` table schema
