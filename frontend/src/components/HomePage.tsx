@@ -84,16 +84,6 @@ function PageTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function EmptyCard({ title, body, children }: { title: string; body: string; children?: React.ReactNode }) {
-  return (
-    <Card className="max-w-[480px] gap-3 p-8">
-      <p className="font-semibold">{title}</p>
-      <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
-      {children}
-    </Card>
-  )
-}
-
 function DashboardHome({
   scans,
   loading,
@@ -911,107 +901,131 @@ function ScanView({
   )
 }
 
+function SettingsPanel({ code, title, children }: { code: string; title: string; children: React.ReactNode }) {
+  return (
+    <div className="clay p-6">
+      <div className="mb-4 flex items-center gap-2 font-mono text-[10px] tracking-[0.3em] text-muted-foreground uppercase">
+        <span className="text-teal">{code}</span>
+        <span>{title}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 function SettingsView({
   session,
   onSignOut,
-  gestureEnabled,
-  onToggleGesture,
-  gloveEnabled,
-  onToggleGlove,
+  gestureMode,
+  onSelectGestureMode,
 }: {
   session: Session
   onSignOut: () => void
-  gestureEnabled: boolean
-  onToggleGesture: (next: boolean) => void
-  gloveEnabled: boolean
-  onToggleGlove: (next: boolean) => void
+  gestureMode: GestureMode
+  onSelectGestureMode: (mode: GestureMode) => void
 }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
   const [unit, setUnit] = useUnit()
+  const email = session.user.email ?? ''
+  const provider = session.user.app_metadata?.provider ?? 'email'
+
+  const GESTURE_CARDS: { mode: GestureMode; title: string; hint: string; accent: string }[] = [
+    { mode: 'off', title: 'No input tracking', hint: 'keyboard + mouse only', accent: 'text-muted-foreground' },
+    { mode: 'webcam', title: 'Webcam · monocular', hint: 'no calibration required', accent: 'text-teal' },
+    { mode: 'glove', title: 'Glove · 6-dof', hint: 'pair via bluetooth · beta', accent: 'text-coral' },
+  ]
 
   return (
     <>
-      <Eyebrow>Settings</Eyebrow>
-      <PageTitle>Account</PageTitle>
-      <EmptyCard title={session.user.email ?? ''} body={`Signed in via ${session.user.app_metadata?.provider ?? 'email'}.`}>
-        <Button variant="outline" className="mt-1 w-fit" onClick={onSignOut}>
-          Sign out
-        </Button>
-      </EmptyCard>
+      <SectionHeader
+        code="04 · settings"
+        title={
+          <>
+            Your workbench, <span className="italic text-muted-foreground">calibrated.</span>
+          </>
+        }
+        hint="Every preference is a measurement. Change one and the workspace re-fits."
+      />
 
-      <Card className="mt-4 max-w-[480px] gap-3 p-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-semibold">Measurement units</p>
-            <p className="text-sm text-muted-foreground">
-              Display dimensions in millimetres or inches. Stored internally in mm either way — this only changes the
-              display.
-            </p>
+      <div className="grid grid-cols-1 gap-6">
+        <SettingsPanel code="01" title="account">
+          <div className="flex items-center gap-6">
+            <div className="clay flex h-16 w-16 items-center justify-center font-display text-2xl text-teal">
+              {email.slice(0, 1).toUpperCase() || 'T'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm">{email}</div>
+              <div className="mt-1 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+                signed in via {provider}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="flex h-9 shrink-0 items-center border border-border px-4 font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase hover:border-coral/50 hover:text-coral"
+            >
+              sign out
+            </button>
           </div>
-          <UnitToggle unit={unit} onChange={setUnit} />
-        </div>
-      </Card>
+        </SettingsPanel>
 
-      <Card className="mt-4 max-w-[480px] gap-3 p-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-semibold">Assistant voice replies</p>
-            <p className="text-sm text-muted-foreground">
-              Spoken in Hafreed's own cloned voice. Off by default — captions are always shown either way.
-            </p>
+        <SettingsPanel code="02" title="input · gesture">
+          <p className="mb-4 max-w-md text-xs text-muted-foreground">
+            Rotate, pan, and resize your model with your hand. Webcam needs no calibration; the ESP32 glove pairs over
+            Bluetooth for six-degree precision. Both need Chrome or Edge.
+          </p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {GESTURE_CARDS.map((card) => {
+              const active = gestureMode === card.mode
+              return (
+                <button
+                  key={card.mode}
+                  type="button"
+                  onClick={() => onSelectGestureMode(card.mode)}
+                  className={`border p-4 text-left transition-colors ${
+                    active
+                      ? card.mode === 'glove'
+                        ? 'border-coral bg-coral/5'
+                        : 'border-teal bg-teal/5'
+                      : 'border-border hover:border-teal/50'
+                  }`}
+                >
+                  <div className={`font-mono text-[9px] tracking-[0.3em] uppercase ${card.accent}`}>{card.mode}</div>
+                  <div className="mt-2 text-sm">{card.title}</div>
+                  <div className="mt-1 font-mono text-[10px] text-muted-foreground">{card.hint}</div>
+                </button>
+              )
+            })}
           </div>
-          <Switch
-            checked={voiceEnabled}
-            onCheckedChange={(next) => {
-              setVoiceEnabledState(next)
-              setVoiceEnabled(next)
-            }}
-          />
-        </div>
-      </Card>
+        </SettingsPanel>
 
-      <Card className="mt-4 max-w-[480px] gap-3 p-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="flex items-center gap-2 font-semibold">
-              Gesture control (webcam) <Badge variant="amber">Experimental</Badge>
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Rotate, pan, and resize the model by moving your hand in front of the webcam. Off by default —
-              shows a live camera preview with tracked hand points whenever it's on.
-            </p>
+        <SettingsPanel code="03" title="workspace">
+          <div className="flex items-center justify-between border-b border-border/50 pb-4">
+            <div className="max-w-md">
+              <div className="text-sm">Measurement units</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Display in millimetres or inches — stored internally in mm either way.
+              </p>
+            </div>
+            <UnitToggle unit={unit} onChange={setUnit} />
           </div>
-          <Switch
-            checked={gestureEnabled}
-            onCheckedChange={(next) => {
-              onToggleGesture(next)
-              setWebcamGestureEnabled(next)
-              if (next) markGestureTried()
-            }}
-          />
-        </div>
-      </Card>
-
-      <Card className="mt-4 max-w-[480px] gap-3 p-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="flex items-center gap-2 font-semibold">
-              Gesture control (glove) <Badge variant="amber">Experimental</Badge>
-            </p>
-            <p className="text-sm text-muted-foreground">
-              The physical ESP32 glove (Track 2). Same rotate/pan/resize gestures over Bluetooth. Off by default —
-              needs Chrome or Edge, and a "Connect glove" step to pair.
-            </p>
+          <div className="flex items-center justify-between pt-4">
+            <div className="max-w-md">
+              <div className="text-sm">Assistant voice replies</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Spoken in Hafreed's cloned voice. Off by default — captions always show either way.
+              </p>
+            </div>
+            <Switch
+              checked={voiceEnabled}
+              onCheckedChange={(next) => {
+                setVoiceEnabledState(next)
+                setVoiceEnabled(next)
+              }}
+            />
           </div>
-          <Switch
-            checked={gloveEnabled}
-            onCheckedChange={(next) => {
-              onToggleGlove(next)
-              setGloveGestureEnabled(next)
-            }}
-          />
-        </div>
-      </Card>
+        </SettingsPanel>
+      </div>
     </>
   )
 }
@@ -1118,10 +1132,8 @@ export default function HomePage({ session }: { session: Session }) {
           <SettingsView
             session={session}
             onSignOut={() => supabase?.auth.signOut()}
-            gestureEnabled={gestureEnabled}
-            onToggleGesture={setGestureEnabled}
-            gloveEnabled={gloveEnabled}
-            onToggleGlove={setGloveEnabled}
+            gestureMode={gestureMode}
+            onSelectGestureMode={selectGestureMode}
           />
         </div>
       </main>
