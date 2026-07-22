@@ -89,8 +89,8 @@ export default function WebcamGesturePanel({
   const [retryNonce, setRetryNonce] = useState(0)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(getPreferredCameraDeviceId)
-  const [debugInfos, setDebugInfos] = useState<GestureDebugInfo[]>([])
-  const [handCount, setHandCount] = useState(0)
+  const [debug, setDebug] = useState<GestureDebugInfo | null>(null)
+  const [handVisible, setHandVisible] = useState(false)
 
   // Populate the camera picker whenever the panel is on — labels only come
   // through once permission has been granted at least once, and refresh on
@@ -138,16 +138,16 @@ export default function WebcamGesturePanel({
         await videoRef.current.play()
 
         const tracker = new WebcamGestureTracker(videoRef.current, {
-          onFrame: (hands) => {
-            setHandCount(hands.length)
-            drawOverlay(canvasRef.current, videoRef.current, hands)
+          onFrame: (landmarks) => {
+            setHandVisible(!!landmarks)
+            drawOverlay(canvasRef.current, videoRef.current, landmarks)
           },
-          onDebug: setDebugInfos,
+          onDebug: setDebug,
           onGesture: (event) => {
             applyGestureEvent(event, getDimensions)
             // Dev-only: makes miscalibration easy to diagnose during tuning.
-            console.debug('[gesture]', event.hand, event.gesture, event)
-            setLastGesture(`${GESTURE_LABELS[event.gesture]}${event.hand ? ` (${event.hand})` : ''}`)
+            console.debug('[gesture]', event.gesture, event)
+            setLastGesture(GESTURE_LABELS[event.gesture])
             if (flashTimer.current) clearTimeout(flashTimer.current)
             flashTimer.current = setTimeout(() => setLastGesture(null), GESTURE_FLASH_MS)
           },
@@ -184,11 +184,8 @@ export default function WebcamGesturePanel({
     <div className="fixed bottom-4 left-4 z-50 w-fit overflow-hidden rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
       <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Hand size={13} className={cn(handCount > 0 && 'text-primary')} />
+          <Hand size={13} className={cn(handVisible && 'text-primary')} />
           Gesture control
-          {handCount > 1 && (
-            <span className="rounded bg-primary/15 px-1 py-0.5 text-[9px] font-medium text-primary">2 hands</span>
-          )}
         </div>
         {lastGesture && (
           <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
@@ -241,7 +238,7 @@ export default function WebcamGesturePanel({
             )}
           </div>
         )}
-        {status === 'active' && handCount === 0 && (
+        {status === 'active' && !handVisible && (
           <div className="absolute inset-x-0 bottom-0 bg-background/80 px-2 py-1 text-center text-[10px] text-muted-foreground">
             No hand detected
           </div>
@@ -249,23 +246,10 @@ export default function WebcamGesturePanel({
       </div>
 
       {status === 'active' && (
-        <div className="border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">
-          {debugInfos.length === 0 ? (
-            <div className="grid grid-cols-3 gap-1 text-center">
-              <span>pinch —</span>
-              <span>move —</span>
-              <span>tilt —°</span>
-            </div>
-          ) : (
-            debugInfos.map((info) => (
-              <div key={info.hand} className="grid grid-cols-4 gap-1 text-center">
-                <span className="text-primary">{info.hand.slice(0, 1)}</span>
-                <span>{info.pinch.toFixed(3)}</span>
-                <span>{info.moveDist.toFixed(3)}</span>
-                <span>{info.rotateDeltaDeg.toFixed(0)}°</span>
-              </div>
-            ))
-          )}
+        <div className="grid grid-cols-3 gap-1 border-t border-border px-2.5 py-1.5 text-center text-[10px] text-muted-foreground">
+          <span>pinch {debug ? debug.pinch.toFixed(3) : '—'}</span>
+          <span>move {debug ? debug.moveDist.toFixed(3) : '—'}</span>
+          <span>tilt {debug ? debug.rotateDeltaDeg.toFixed(0) : '—'}°</span>
         </div>
       )}
     </div>
@@ -275,7 +259,7 @@ export default function WebcamGesturePanel({
 function drawOverlay(
   canvas: HTMLCanvasElement | null,
   video: HTMLVideoElement | null,
-  hands: TrackedPoint[][],
+  landmarks: TrackedPoint[] | null,
 ): void {
   if (!canvas || !video) return
   const ctx = canvas.getContext('2d')
@@ -289,7 +273,7 @@ function drawOverlay(
   ctx.scale(-1, 1)
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-  for (const landmarks of hands) {
+  if (landmarks) {
     ctx.strokeStyle = '#2dd4bf'
     ctx.lineWidth = 1.5
     for (const [a, b] of CONNECTIONS) {

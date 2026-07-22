@@ -10,7 +10,6 @@ export interface GestureEvent {
   magnitude: number // 0..1 intensity, always positive
   direction?: 'up' | 'down' | 'left' | 'right' // set for 'move'
   signedDelta?: number // set for 'rotate': +degrees clockwise, -degrees counter-clockwise
-  hand?: string // which hand produced it (handedness label) — for logging/UI only
   timestamp: number
 }
 
@@ -20,44 +19,41 @@ export interface TrackedPoint {
   z: number
 }
 
-// Live raw numbers behind the current classification, surfaced to the
-// debug panel so thresholds below can be retuned by eye instead of by
-// guesswork — the same reason the firmware track's DEBUG_SERIAL mode
-// prints raw sensor values. One per tracked hand.
+// Live raw numbers behind the current classification, surfaced to the debug
+// panel so thresholds below can be retuned by eye.
 export interface GestureDebugInfo {
-  hand: string
   pinch: number
   moveDist: number
   rotateDeltaDeg: number
 }
 
-// Up to two hands tracked at once — each hand is classified independently
-// against its own neutral anchor, so both can drive gestures simultaneously
-// (e.g. left hand rotating while right hand resizes). See classifyHand.
-const MAX_HANDS = 2
+// SINGLE HAND ONLY. We track exactly one hand (the most-confident one) and
+// ignore any second hand entirely — matching the glove track, and avoiding
+// the ambiguity/misfires of simultaneous two-hand control.
+const MAX_HANDS = 1
 
 // Throttle to ~18fps — within the spec's 15-20fps target, easy on CPU.
 const FRAME_INTERVAL_MS = 1000 / 18
 
+// Skip frames where hand tracking is low-confidence rather than classifying a
+// guess — MediaPipe's handedness score is the available proxy for detection
+// quality; below this the frame is treated as "no hand".
+const MIN_HAND_CONFIDENCE = 0.5
+
+// A classified gesture TYPE must persist this long before it starts firing —
+// debounces the noisy transitions between poses, matching the glove firmware's
+// 150ms hold. Once stable, a held pose fires every processed frame.
+const DEBOUNCE_MS = 150
+
 // All four gestures are HELD POSES relative to a neutral reference, judged
-// every processed frame — not one-shot motions. Earlier versions compared
-// each frame only to the previous one, which meant holding a static pose
-// (hand spread wide, hand pushed to one side, wrist tilted) produced zero
-// further delta after the initial motion and the gesture simply stopped,
-// even though the hand never returned to neutral. Now:
-//  - Resize compares pinch distance to a fixed absolute open/closed
-//    threshold — "spread wide" and "pinched tight" are universal enough
-//    poses not to need a personal calibration.
-//  - Move/rotate compare against an ANCHOR captured the moment a hand
-//    first becomes trackable (like a joystick centered wherever your hand
-//    naturally rested) — pushing away from that anchor and holding keeps
-//    firing every frame, proportional to how far you're holding it,
-//    returning near the anchor stops it. The anchor re-centers whenever
-//    tracking is lost and regained (hand leaves frame, closes into a fist
-//    out of view, etc.), so there's no dedicated "recenter" gesture to learn.
+// every processed frame — not one-shot motions:
+//  - Resize compares pinch distance to a fixed absolute open/closed threshold.
+//  - Move/rotate compare against an ANCHOR captured the moment the hand first
+//    becomes trackable (a joystick centered wherever the hand rested); holding
+//    away from it keeps firing, returning near it stops. The anchor re-centers
+//    whenever tracking is lost and regained.
 //
-// Thresholds tuned by eye against the debug overlay — expect to retune
-// these after real usage (see CLAUDE.md build order step 3).
+// Thresholds tuned by eye against the debug overlay — retune after real usage.
 const PINCH_OPEN_THRESHOLD = 0.09
 const PINCH_CLOSED_THRESHOLD = 0.035
 const RESIZE_BASE_MAGNITUDE = 0.05
@@ -70,21 +66,16 @@ const ROTATE_DEAD_ZONE_DEG = 10
 const ROTATE_STEP_DEGREES_PER_FRAME = 4
 const ROTATE_MAGNITUDE_GAIN = 1 / 30
 
-// Self-hosted (public/mediapipe/, copied from node_modules at build time —
-// see frontend/README) rather than pulled from cdn.jsdelivr.net /
-// storage.googleapis.com at runtime. Those two external CDNs are blocked by
-// some networks/firewalls, which broke gesture control with an opaque
-// "[object Event]" load failure instead of ever reaching our own code.
+// Self-hosted (public/mediapipe/) rather than pulled from external CDNs some
+// networks block — that broke gesture control with an opaque "[object Event]"
+// load failure before ever reaching our own code.
 const HAND_LANDMARKER_WASM_BASE = '/mediapipe/wasm'
 const HAND_LANDMARKER_MODEL_URL = '/mediapipe/hand_landmarker.task'
 
 let sharedLandmarker: Promise<HandLandmarker> | null = null
 
-// MediaPipe's internal wasm/model loader can reject with a raw Event (e.g. a
-// Worker or XHR error event) instead of an Error — that produces the
-// unhelpful "[object Event]" if it reaches String(err) unchanged, so
-// normalize whatever comes out of here into a real Error with a readable
-// message.
+// MediaPipe's loader can reject with a raw Event instead of an Error (→ the
+// unhelpful "[object Event]"); normalize into a readable Error.
 function toLoadError(err: unknown): Error {
   if (err instanceof Error) return err
   if (err instanceof Event) {
@@ -107,9 +98,7 @@ function loadHandLandmarker(): Promise<HandLandmarker> {
         }),
       )
       .catch((err) => {
-        // Don't cache a failed load — otherwise every future "Try again"
-        // click would instantly re-reject with the same stale failure
-        // instead of actually retrying the network fetch.
+        // Don't cache a failed load, or "Try again" would re-reject instantly.
         sharedLandmarker = null
         throw toLoadError(err)
       })
@@ -121,38 +110,35 @@ function distance2d(a: TrackedPoint, b: TrackedPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-// Per-hand joystick center — one of these per tracked hand, keyed by
-// handedness so a hand keeps its own anchor across frames.
-interface HandState {
-  anchorPalm: { x: number; y: number } | null
-  anchorAngleDeg: number | null
-}
-
 export interface WebcamGestureHandlers {
-  onFrame?: (hands: TrackedPoint[][]) => void
-  onDebug?: (infos: GestureDebugInfo[]) => void
+  onFrame?: (landmarks: TrackedPoint[] | null) => void
+  onDebug?: (info: GestureDebugInfo | null) => void
   onGesture: (event: GestureEvent) => void
 }
 
-// Threshold-based state machine over per-frame landmarks — deliberately not
-// an ML classifier, mirrors the firmware approach planned for the glove
-// track so both tracks stay easy to reason about and retune.
+// What a frame classifies to before debouncing — the type plus its already-
+// computed parameters, or null when the hand is neutral / mid-transition.
+type Classified = Omit<GestureEvent, 'timestamp'> | null
+
+// Threshold-based state machine over per-frame landmarks — deliberately not an
+// ML classifier, mirroring the firmware approach so both tracks stay easy to
+// reason about and retune.
 export class WebcamGestureTracker {
   private video: HTMLVideoElement
   private handlers: WebcamGestureHandlers
   private rafHandle: number | null = null
   private lastFrameTime = 0
   private stopped = true
-  // Bumped by stop() so a start() call that's mid-await (loading the model)
-  // when stop() fires notices on resume and bails instead of starting a
-  // loop nobody wants anymore — model loading can take seconds, easily
-  // longer than a React StrictMode dev double-mount's cleanup/remount gap.
   private generation = 0
 
-  // Anchors per hand, keyed by handedness label ("Left"/"Right", with an
-  // index suffix in the rare case MediaPipe labels both hands the same). A
-  // hand that disappears has its entry dropped so it re-centers on return.
-  private handStates = new Map<string, HandState>()
+  // Single-hand joystick center. Re-centers whenever the hand is lost.
+  private anchorPalm: { x: number; y: number } | null = null
+  private anchorAngleDeg: number | null = null
+
+  // Debounce state for the classified gesture type.
+  private candidateType: GestureType | null = null
+  private candidateSince = 0
+  private activeType: GestureType | null = null
 
   constructor(video: HTMLVideoElement, handlers: WebcamGestureHandlers) {
     this.video = video
@@ -181,51 +167,30 @@ export class WebcamGestureTracker {
     this.stopped = true
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle)
     this.rafHandle = null
-    this.handStates.clear()
+    this.resetTracking()
+  }
+
+  private resetTracking(): void {
+    this.anchorPalm = null
+    this.anchorAngleDeg = null
+    this.candidateType = null
+    this.activeType = null
   }
 
   private processResult(result: HandLandmarkerResult, time: number): void {
-    const hands = result.landmarks ?? []
-    const framePoints: TrackedPoint[][] = []
-    const debugInfos: GestureDebugInfo[] = []
-    const presentKeys = new Set<string>()
+    const hand = result.landmarks?.[0]
+    const confidence = result.handedness?.[0]?.[0]?.score ?? 0
 
-    for (let i = 0; i < hands.length; i++) {
-      const landmarks = hands[i]
-      if (!landmarks || landmarks.length < 21) continue
-
-      // Key by handedness so each hand keeps its own anchor frame-to-frame,
-      // not by array index (MediaPipe may reorder hands between frames).
-      // Disambiguate the rare duplicate-label case with the index.
-      const label = result.handedness?.[i]?.[0]?.categoryName ?? `hand-${i}`
-      const key = presentKeys.has(label) ? `${label}-${i}` : label
-      presentKeys.add(key)
-
-      framePoints.push(landmarks)
-      debugInfos.push(this.classifyHand(landmarks, key, time))
+    // No hand, too few landmarks, or low confidence → skip this frame and
+    // re-center. The second hand (index ≥ 1) is never looked at.
+    if (!hand || hand.length < 21 || confidence < MIN_HAND_CONFIDENCE) {
+      this.handlers.onFrame?.(null)
+      this.handlers.onDebug?.(null)
+      this.resetTracking()
+      return
     }
 
-    // Drop anchors for hands no longer on screen — a hand that leaves and
-    // returns re-centers to wherever it comes back, so there's no stale
-    // anchor to chase.
-    for (const key of [...this.handStates.keys()]) {
-      if (!presentKeys.has(key)) this.handStates.delete(key)
-    }
-
-    this.handlers.onFrame?.(framePoints)
-    this.handlers.onDebug?.(debugInfos)
-  }
-
-  // Classifies a single hand against its own anchor and emits at most one
-  // gesture for it. Returns the raw numbers for the debug readout. Called
-  // once per hand per frame, so two hands produce two independent gestures
-  // in the same frame.
-  private classifyHand(hand: TrackedPoint[], key: string, time: number): GestureDebugInfo {
-    let state = this.handStates.get(key)
-    if (!state) {
-      state = { anchorPalm: null, anchorAngleDeg: null }
-      this.handStates.set(key, state)
-    }
+    this.handlers.onFrame?.(hand)
 
     const wrist = hand[0]
     const thumbTip = hand[4]
@@ -242,47 +207,70 @@ export class WebcamGestureTracker {
     }
     const angleDeg = (Math.atan2(middleMcp.y - wrist.y, middleMcp.x - wrist.x) * 180) / Math.PI
 
-    if (state.anchorPalm === null) state.anchorPalm = palm
-    if (state.anchorAngleDeg === null) state.anchorAngleDeg = angleDeg
+    if (this.anchorPalm === null) this.anchorPalm = palm
+    if (this.anchorAngleDeg === null) this.anchorAngleDeg = angleDeg
 
-    const dx = palm.x - state.anchorPalm.x
-    const dy = palm.y - state.anchorPalm.y
+    const dx = palm.x - this.anchorPalm.x
+    const dy = palm.y - this.anchorPalm.y
     const moveDist = Math.hypot(dx, dy)
 
-    let rotateDeltaDeg = angleDeg - state.anchorAngleDeg
+    let rotateDeltaDeg = angleDeg - this.anchorAngleDeg
     if (rotateDeltaDeg > 180) rotateDeltaDeg -= 360
     if (rotateDeltaDeg < -180) rotateDeltaDeg += 360
 
-    const info: GestureDebugInfo = { hand: key, pinch, moveDist, rotateDeltaDeg }
+    this.handlers.onDebug?.({ pinch, moveDist, rotateDeltaDeg })
 
-    // Resize wins over move/rotate — a pinch is the most deliberate pose
-    // and shouldn't be muddied by incidental hand drift while pinching.
+    const classified = this.classify(pinch, dx, dy, moveDist, rotateDeltaDeg)
+    this.emitDebounced(classified, time)
+  }
+
+  // Priority: resize (a deliberate pinch) > move (translation) > rotate (twist).
+  private classify(pinch: number, dx: number, dy: number, moveDist: number, rotateDeltaDeg: number): Classified {
     if (pinch > PINCH_OPEN_THRESHOLD) {
       const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (pinch - PINCH_OPEN_THRESHOLD) * RESIZE_MAGNITUDE_GAIN, 1)
-      this.handlers.onGesture({ gesture: 'resize_up', magnitude, hand: key, timestamp: time })
-      return info
+      return { gesture: 'resize_up', magnitude }
     }
     if (pinch < PINCH_CLOSED_THRESHOLD) {
       const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (PINCH_CLOSED_THRESHOLD - pinch) * RESIZE_MAGNITUDE_GAIN, 1)
-      this.handlers.onGesture({ gesture: 'resize_down', magnitude, hand: key, timestamp: time })
-      return info
+      return { gesture: 'resize_down', magnitude }
     }
-
     if (moveDist > MOVE_DEAD_ZONE) {
       const direction: GestureEvent['direction'] =
         Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
       const magnitude = Math.min((moveDist - MOVE_DEAD_ZONE) * MOVE_MAGNITUDE_GAIN, 1)
-      this.handlers.onGesture({ gesture: 'move', magnitude, direction, hand: key, timestamp: time })
-      return info
+      return { gesture: 'move', magnitude, direction }
     }
-
     if (Math.abs(rotateDeltaDeg) > ROTATE_DEAD_ZONE_DEG) {
       const excess = Math.abs(rotateDeltaDeg) - ROTATE_DEAD_ZONE_DEG
       const magnitude = Math.min(excess * ROTATE_MAGNITUDE_GAIN, 1)
       const signedDelta = Math.sign(rotateDeltaDeg) * magnitude * ROTATE_STEP_DEGREES_PER_FRAME
-      this.handlers.onGesture({ gesture: 'rotate', magnitude, signedDelta, hand: key, timestamp: time })
+      return { gesture: 'rotate', magnitude, signedDelta }
+    }
+    return null
+  }
+
+  // Only fire once a gesture type has been stable for DEBOUNCE_MS — so brief
+  // flickers during hand transitions don't misfire; a held pose then fires
+  // every frame.
+  private emitDebounced(classified: Classified, time: number): void {
+    const type = classified?.gesture ?? null
+
+    if (type !== this.candidateType) {
+      this.candidateType = type
+      this.candidateSince = time
     }
 
-    return info
+    if (type === null) {
+      this.activeType = null
+      return
+    }
+
+    if (this.activeType !== type && time - this.candidateSince >= DEBOUNCE_MS) {
+      this.activeType = type
+    }
+
+    if (this.activeType === type && classified) {
+      this.handlers.onGesture({ ...classified, timestamp: time })
+    }
   }
 }

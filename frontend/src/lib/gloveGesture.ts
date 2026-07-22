@@ -44,7 +44,6 @@ function parsePayload(view: DataView): GestureEvent | null {
     direction: DIRECTION_BY_CODE[view.getUint8(1)],
     magnitude: view.getFloat32(2, true),
     signedDelta: view.getFloat32(6, true),
-    hand: 'glove',
     timestamp: view.getUint32(10, true),
   }
 }
