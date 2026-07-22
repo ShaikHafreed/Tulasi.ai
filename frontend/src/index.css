@@ -4,7 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.6rem;
+  --radius: 0.5rem;
   --background: #0b0f1a;
   --foreground: #eceff4;
   --card: #131a2b;
@@ -489,8 +489,41 @@
   animation: tulasi-blink 1.1s steps(1) infinite;
 }
 
+/* Sweeping scan line — reuses the hero motif on framed surfaces. */
+@keyframes tulasi-scanline {
+  0% { transform: translateY(-120%); }
+  100% { transform: translateY(220%); }
+}
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 40%;
+  background: linear-gradient(to bottom, transparent 0%, var(--color-teal) 50%, transparent 100%);
+  opacity: 0.16;
+  animation: tulasi-scanline 2.4s linear infinite;
+  pointer-events: none;
+}
+
+/* Dotted blueprint frame for technical panels. */
+.blueprint-frame {
+  position: relative;
+  border: 1px solid var(--color-border);
+  background:
+    radial-gradient(circle at 0 0, var(--color-teal) 1px, transparent 1px) 0 0 / 24px 24px,
+    radial-gradient(circle at 0 0, var(--color-teal) 1px, transparent 1px) 12px 12px / 24px 24px;
+  background-color: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .caret-blink {
+  .caret-blink,
+  .scanline::after {
     animation: none;
   }
 }
