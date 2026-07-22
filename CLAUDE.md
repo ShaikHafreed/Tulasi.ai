@@ -59,15 +59,24 @@ quality, which is already commoditized (Meshy, Tripo, Rodin).
 - Lovable landing design ported (scroll sketch→model hero) with the
   mug-handle-outside and blueprint-grid fixes applied.
 
-**Not yet built / needs revision (next work):**
-- Claude-vision object recognition (`routers/recognize.py` +
-  `services/recognize.py` + `MOCK_RECOGNIZE` + `ObjectRecognitionStep`) —
-  today's confirm step is an OpenCV *crop*, not labelled multi-object
-  recognition with a pick/confirm UX.
-- Webcam gestures are currently **two-hand** (`lib/webcamGesture.ts`,
-  `MAX_HANDS=2`); target is **single-hand only** + skip-low-confidence-frames
-  + 150ms debounce + deadzones + ignore any second hand. No unified
-  `GestureStatusIndicator` component yet.
+**Object recognition (done):** `routers/recognize.py` + `services/recognize.py`
++ `MOCK_RECOGNIZE` (default 1) + `ObjectRecognitionStep`. `POST /api/recognize`
+identifies the object(s) (Claude vision when credit exists; an honest OpenCV
+box guess with a *null* label in mock mode — never a faked label). The scan
+flow is Upload → **recognise/confirm/adjust** → crop → Generate.
+
+**Gestures (done, single-hand):** `lib/webcamGesture.ts` is `numHands=1`,
+ignores any second hand, skips low-confidence frames (handedness score < 0.5),
+and 150ms-debounces the classified gesture type before firing. Unified
+`components/gesture/GestureStatusIndicator` (off / webcam-active / glove-linked)
+lives in the nav, wired to the real persisted toggles.
+
+**Full Lovable UI ported:** the app shell (numbered mono nav, teal sliding
+indicator, gesture status, present button, radial glow), Dashboard, Library,
+Settings, and ProgressStages all carry the Lovable design on **real data**.
+Deferred: assistant full-screen restyle (the floating `ChatPanel` is already
+on-brand + real) and a standalone print-report screen (needs a new nav item +
+real validation surface).
 
 **`scans` table** (Supabase, RLS enabled, FK `user_id -> auth.users.id`):
 `id, user_id, job_id, object_name, model_url, image_url, source_image_url,
