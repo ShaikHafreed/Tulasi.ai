@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { Download, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import { type GestureMode } from './gesture/GestureStatusIndicator'
+import { Readout, SectionHeader } from './tulasi/Readout'
 import UploadZone from './scan/UploadZone'
 import SubjectSelect from './scan/SubjectSelect'
 import ProgressStages from './scan/ProgressStages'
@@ -94,51 +95,139 @@ function EmptyCard({ title, body, children }: { title: string; body: string; chi
 }
 
 function DashboardHome({
-  session,
-  scanCount,
+  scans,
+  loading,
   onGoToScan,
+  onGoToLibrary,
 }: {
-  session: Session
-  scanCount: number | null
+  scans: Scan[]
+  loading: boolean
   onGoToScan: () => void
+  onGoToLibrary: () => void
 }) {
-  const name = session.user.user_metadata?.name ?? session.user.email
+  const [unit] = useUnit()
+  const scanCount = loading ? null : scans.length
+  const active = scans[0] ?? null
+  const recent = scans.slice(0, 5)
+
   return (
     <>
-      <Eyebrow>Dashboard</Eyebrow>
-      <PageTitle>Welcome back, {name}.</PageTitle>
+      <SectionHeader
+        code="01 · dashboard"
+        title={
+          <>
+            Precision <span className="italic text-muted-foreground">at a glance.</span>
+          </>
+        }
+        hint="Your most recent model, its measured dimensions, and everything in your library — one calibrated readout."
+        right={
+          <button
+            type="button"
+            onClick={onGoToScan}
+            className="border border-teal bg-teal px-4 py-2 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
+          >
+            + new scan
+          </button>
+        }
+      />
 
       <OnboardingChecklist hasScans={(scanCount ?? 0) > 0} onGoToScan={onGoToScan} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.3fr_1fr] sm:grid-rows-[auto_auto]">
-        <div className="clay clay-coral row-span-2 flex flex-col justify-between gap-6 p-8">
-          <div>
-            <p className="font-display text-[11px] tracking-[0.16em] text-brand-coral uppercase">
-              Ready to measure something?
-            </p>
-            <p className="mt-3 max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
-              Photograph an object next to a coin or card and Tulasi calibrates it to real-world
-              millimeters — no guessing, no eyeballing.
-            </p>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Active (most-recent) model — real data */}
+        <div className="clay corner-ticks relative overflow-hidden p-6 lg:col-span-2">
+          <div className="flex items-center justify-between font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">
+            <span className="flex items-center gap-2 text-teal">
+              <span className="inline-block h-1.5 w-1.5 bg-teal caret-blink" />
+              {active ? `latest · ${active.object_name ?? active.job_id}` : 'no active model'}
+            </span>
+            {active?.depth_estimated ? <span className="text-coral">depth · est.</span> : <span>fit · true</span>}
           </div>
-          <button type="button" className="nova-btn w-fit" onClick={onGoToScan}>
-            <span className="nova-stars" aria-hidden="true" />
-            <span className="nova-glow" aria-hidden="true" />
-            <span className="nova-label">Scan your first object</span>
-          </button>
+
+          {active ? (
+            <div className="mt-4 grid grid-cols-1 items-center gap-6 md:grid-cols-[1fr_auto]">
+              <div className="flex items-center justify-center">
+                {active.image_url ? (
+                  <img src={active.image_url} alt={active.object_name ?? 'model'} className="h-48 w-48 rounded-xl object-cover" />
+                ) : (
+                  <div className="flex h-48 w-48 items-center justify-center rounded-xl border border-border text-xs text-muted-foreground">
+                    rendering…
+                  </div>
+                )}
+              </div>
+              <div className="grid w-full grid-cols-2 gap-3 md:w-72">
+                <Readout label="width" value={active.width_mm ? toDisplayValue(active.width_mm, unit) : '—'} unit={unitLabel(unit)} />
+                <Readout label="height" value={active.height_mm ? toDisplayValue(active.height_mm, unit) : '—'} unit={unitLabel(unit)} />
+                <Readout label="depth" value={active.depth_mm ? toDisplayValue(active.depth_mm, unit) : '—'} unit={unitLabel(unit)} tone={active.depth_estimated ? 'coral' : 'teal'} />
+                <Readout label="scanned" value={new Date(active.created_at).toLocaleDateString()} tone="muted" />
+              </div>
+            </div>
+          ) : (
+            <p className="mt-6 max-w-[40ch] text-sm text-muted-foreground">
+              No models yet. Photograph an object next to a coin or card and Tulasi calibrates it to real-world
+              millimeters.
+            </p>
+          )}
         </div>
 
-        <div className="clay flex flex-col gap-1.5 p-6">
-          <span className="font-display text-4xl tabular-nums text-primary">{scanCount ?? '—'}</span>
-          <span className="text-[0.8rem] text-muted-foreground">Objects scanned</span>
-        </div>
-
-        <div className="clay flex flex-col gap-1.5 p-6">
-          <span className="font-display text-[11px] tracking-[0.1em] text-primary uppercase">Tip</span>
-          <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
-            A credit card gives the most accurate calibration — flat, standard-sized, easy to spot.
+        {/* Quick actions — real navigation, real count */}
+        <div className="clay p-5">
+          <div className="font-mono text-[10px] tracking-[0.3em] text-muted-foreground uppercase">at a glance</div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="font-display text-4xl tabular-nums text-primary">{scanCount ?? '—'}</span>
+            <span className="text-[0.8rem] text-muted-foreground">objects scanned</span>
+          </div>
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={onGoToScan}
+              className="border border-teal/50 px-3 py-2 text-left font-mono text-[10px] tracking-[0.25em] text-teal uppercase hover:bg-teal/10"
+            >
+              + new scan
+            </button>
+            <button
+              type="button"
+              onClick={onGoToLibrary}
+              className="border border-border px-3 py-2 text-left font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase hover:text-foreground"
+            >
+              open library →
+            </button>
+          </div>
+          <p className="mt-4 text-[0.78rem] leading-relaxed text-muted-foreground">
+            Tip: a credit card gives the most accurate calibration — flat, standard-sized, easy to spot.
           </p>
         </div>
+      </div>
+
+      {/* Recent — real scans */}
+      <div className="clay mt-6">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <div className="font-mono text-[10px] tracking-[0.3em] text-muted-foreground uppercase">recent</div>
+          <button type="button" onClick={onGoToLibrary} className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase hover:underline">
+            library →
+          </button>
+        </div>
+        {recent.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-muted-foreground">Nothing scanned yet.</p>
+        ) : (
+          <ul>
+            {recent.map((r) => (
+              <li
+                key={r.id}
+                className="grid grid-cols-[1fr_auto_auto] items-center gap-6 border-b border-border/50 px-5 py-4 transition-colors last:border-0 hover:bg-teal/[0.03]"
+              >
+                <div>
+                  <div className="text-sm">{r.object_name ?? r.job_id}</div>
+                  <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{r.job_id.slice(0, 8)}.tul</div>
+                </div>
+                <div className="font-mono text-xs text-muted-foreground">
+                  {r.width_mm && r.height_mm ? formatDimensions(r.width_mm, r.height_mm, r.depth_mm ?? 0, unit) : '—'}
+                </div>
+                <div className="font-mono text-[10px] text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </>
   )
@@ -936,9 +1025,10 @@ export default function HomePage({ session }: { session: Session }) {
             still running fine. */}
         <div className={view === 'dashboard' ? '' : 'hidden'}>
           <DashboardHome
-            session={session}
-            scanCount={scansLoading ? null : scans.length}
+            scans={scans}
+            loading={scansLoading}
             onGoToScan={() => setView('scan')}
+            onGoToLibrary={() => setView('library')}
           />
         </div>
         <div className={view === 'library' ? '' : 'hidden'}>
