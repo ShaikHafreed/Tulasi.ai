@@ -5,7 +5,7 @@ import Sidebar, { type DashboardView } from './Sidebar'
 import { type GestureMode } from './gesture/GestureStatusIndicator'
 import { Readout, SectionHeader } from './tulasi/Readout'
 import UploadZone from './scan/UploadZone'
-import SubjectSelect from './scan/SubjectSelect'
+import ObjectRecognitionStep from './scan/ObjectRecognitionStep'
 import ProgressStages from './scan/ProgressStages'
 import ModelViewer, { type PanTrigger, type RotationTrigger } from './scan/ModelViewer'
 import DimensionPanel, { type Dimensions, type ExternalUpdate } from './scan/DimensionPanel'
@@ -803,7 +803,7 @@ function ScanView({
       )}
 
       {phase === 'selecting' && pendingFiles && (
-        <SubjectSelect
+        <ObjectRecognitionStep
           files={pendingFiles}
           onBack={() => {
             setPendingFiles(null)

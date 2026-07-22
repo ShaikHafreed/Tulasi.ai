@@ -11,6 +11,7 @@ import type {
   RigRecord,
   SharedScan,
   SubjectBox,
+  RecognizeResponse,
 } from './types'
 import type { TulasiEvent } from './tulasiEvents'
 
@@ -48,6 +49,16 @@ export async function detectSubject(file: File): Promise<SubjectBox> {
   const formData = new FormData()
   formData.append('image', file)
   const response = await fetch('/api/detect-subject', { method: 'POST', body: formData })
+  if (!response.ok) await parseErrorOrThrow(response)
+  return response.json()
+}
+
+// Identifies the distinct object(s) in a photo (Claude vision when available;
+// an OpenCV box guess in mock mode) so the user can confirm what to model.
+export async function recognizeObjects(file: File): Promise<RecognizeResponse> {
+  const formData = new FormData()
+  formData.append('image', file)
+  const response = await fetch('/api/recognize', { method: 'POST', body: formData })
   if (!response.ok) await parseErrorOrThrow(response)
   return response.json()
 }

@@ -96,6 +96,19 @@ export interface SubjectBox {
   confident: boolean
 }
 
+export interface RecognizedObject {
+  // label/description are null when the object couldn't be identified (mock /
+  // no Claude credit) — the box is still a real guess.
+  label: string | null
+  description: string | null
+  box: SubjectBox
+  confidence: number
+}
+
+export interface RecognizeResponse {
+  objects: RecognizedObject[]
+}
+
 export interface SharedScan {
   object_name: string | null
   model_url: string | null

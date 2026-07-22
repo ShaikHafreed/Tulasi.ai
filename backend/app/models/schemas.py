@@ -141,6 +141,20 @@ class SubjectBox(BaseModel):
     confident: bool
 
 
+class RecognizedObject(BaseModel):
+    # label/description are None when we can't actually identify the object
+    # (mock mode / no Claude credit) — we never invent a label. box is the
+    # normalised region; confidence is 0..1.
+    label: str | None = None
+    description: str | None = None
+    box: SubjectBox
+    confidence: float
+
+
+class RecognizeResponse(BaseModel):
+    objects: list[RecognizedObject]
+
+
 class ShareResponse(BaseModel):
     slug: str
 

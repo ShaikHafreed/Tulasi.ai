@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .errors import AppError
-from .routers import assistant, character, generate, jobs, measure, scans, share, voice
+from .routers import assistant, character, generate, jobs, measure, recognize, scans, share, voice
 from .services.meshy import STORAGE_DIR
 
 # OpenVoice's phoneme cleaner prints IPA characters straight to stdout; on
@@ -40,6 +40,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 app.include_router(generate.router)
+app.include_router(recognize.router)
 app.include_router(jobs.router)
 app.include_router(measure.router)
 app.include_router(assistant.router)
