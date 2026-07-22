@@ -237,15 +237,22 @@ function LibraryView({
   scans,
   loading,
   onScanDeleted,
+  onGoToScan,
 }: {
   scans: Scan[]
   loading: boolean
   onScanDeleted: () => void
+  onGoToScan: () => void
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [viewingScan, setViewingScan] = useState<Scan | null>(null)
   const [unit] = useUnit()
   const [deleting, setDeleting] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const filtered = scans.filter((s) =>
+    `${s.object_name ?? ''} ${s.job_id}`.toLowerCase().includes(query.toLowerCase()),
+  )
 
   async function confirmDelete(scan: Scan) {
     setDeleting(true)
@@ -262,76 +269,146 @@ function LibraryView({
 
   return (
     <>
-      <Eyebrow>Library</Eyebrow>
-      <PageTitle>Your scanned objects</PageTitle>
+      <SectionHeader
+        code="03 · library"
+        title={
+          <>
+            Every object, <span className="italic text-muted-foreground">measured.</span>
+          </>
+        }
+        hint="Search by name or id. Every card carries its own calibrated readout."
+        right={
+          <div className="flex items-center gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search · name / id"
+              className="h-9 w-56 border border-border bg-transparent px-3 font-mono text-xs placeholder:text-muted-foreground/60 focus:border-teal focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={onGoToScan}
+              className="flex h-9 items-center border border-teal bg-teal px-4 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
+            >
+              + new
+            </button>
+          </div>
+        }
+      />
+
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+
       {!loading && scans.length === 0 && (
-        <EmptyCard
-          title="Nothing saved yet"
-          body="Objects you scan and save will show up here with their real dimensions."
-        />
+        <div className="clay corner-ticks p-12 text-center md:p-20">
+          <svg viewBox="0 0 400 400" className="mx-auto h-40 w-40">
+            <g stroke="var(--color-teal)" strokeOpacity="0.5" strokeWidth="1.4" strokeDasharray="6 6" fill="none">
+              <path d="M 130 130 L 128 300 Q 128 320 148 322 L 252 322 Q 272 320 272 300 L 270 130 Z" />
+              <ellipse cx="200" cy="130" rx="70" ry="16" />
+              <path d="M 272 165 Q 320 175 320 220 Q 320 265 272 275" />
+            </g>
+          </svg>
+          <div className="mt-4 font-mono text-[10px] tracking-[0.3em] text-teal uppercase">no objects yet</div>
+          <h3 className="mt-3 font-display text-2xl md:text-3xl">
+            Your library is <span className="italic text-muted-foreground">calibrated and empty.</span>
+          </h3>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Bring in one photo. Tulasi traces, solves, and fits it to a reference — end-to-end.
+          </p>
+          <button
+            type="button"
+            onClick={onGoToScan}
+            className="mt-6 inline-flex items-center gap-2 border border-teal bg-teal px-4 py-2 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
+          >
+            + first scan →
+          </button>
+        </div>
       )}
-      {scans.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {scans.map((scan) => (
-            <div key={scan.id} className="clay flex flex-col gap-2.5 overflow-hidden p-3">
+
+      {!loading && scans.length > 0 && filtered.length === 0 && (
+        <p className="text-sm text-muted-foreground">No objects match “{query}”.</p>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((scan) => (
+            <article key={scan.id} className="clay group overflow-hidden transition-colors hover:border-teal/40">
               <button
                 type="button"
                 onClick={() => setViewingScan(scan)}
                 disabled={!scan.model_url}
-                className="aspect-square overflow-hidden rounded-2xl bg-secondary disabled:cursor-default"
+                className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-navy-deep/60 disabled:cursor-default"
               >
+                <div
+                  aria-hidden
+                  className="absolute inset-0 opacity-40"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(to right, var(--color-blueprint) 1px, transparent 1px), linear-gradient(to bottom, var(--color-blueprint) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px',
+                  }}
+                />
                 {scan.image_url ? (
-                  <img
-                    src={scan.image_url}
-                    alt={scan.object_name ?? 'Scanned object'}
-                    className="size-full object-cover"
-                  />
+                  <img src={scan.image_url} alt={scan.object_name ?? 'model'} className="relative h-full w-full object-cover" />
                 ) : (
-                  <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                    No preview
-                  </div>
+                  <span className="relative text-xs text-muted-foreground">No preview</span>
                 )}
+                <span
+                  className={`absolute right-3 top-3 border px-2 py-1 font-mono text-[9px] tracking-[0.25em] uppercase ${
+                    scan.depth_estimated
+                      ? 'border-coral/50 bg-coral/5 text-coral'
+                      : 'border-teal/50 bg-teal/5 text-teal'
+                  }`}
+                >
+                  {scan.depth_estimated ? 'depth · est' : 'measured'}
+                </span>
               </button>
-              <div className="flex items-start justify-between gap-2 px-1">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{scan.object_name ?? scan.job_id}</p>
-                  <p className="font-display text-[0.78rem] text-muted-foreground">
-                    {scan.width_mm && scan.height_mm
-                      ? `${toDisplayValue(scan.width_mm, unit)} × ${toDisplayValue(scan.height_mm, unit)} ${unitLabel(unit)}`
-                      : '—'}
-                  </p>
+              <div className="border-t border-border p-4">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 className="truncate text-sm">{scan.object_name ?? scan.job_id}</h3>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {new Date(scan.created_at).toLocaleDateString()}
+                  </span>
                 </div>
-                {confirmDeleteId === scan.id ? (
-                  <div className="flex shrink-0 gap-1">
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="font-mono text-[10px] text-muted-foreground">{scan.job_id.slice(0, 8)}.tul</span>
+                  {confirmDeleteId === scan.id ? (
+                    <span className="flex gap-1">
+                      <button type="button" disabled={deleting} onClick={() => confirmDelete(scan)} className="text-[11px] font-medium text-coral disabled:opacity-50">
+                        Delete
+                      </button>
+                      <button type="button" onClick={() => setConfirmDeleteId(null)} className="text-[11px] text-muted-foreground">
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
                     <button
                       type="button"
-                      disabled={deleting}
-                      onClick={() => confirmDelete(scan)}
-                      className="text-[11px] font-medium text-brand-coral disabled:opacity-50"
+                      onClick={() => setConfirmDeleteId(scan.id)}
+                      className="rounded p-1 text-muted-foreground transition-colors hover:text-coral"
+                      aria-label="Remove scan"
                     >
-                      Delete
+                      <Trash2 size={13} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="text-[11px] text-muted-foreground"
-                    >
-                      Cancel
-                    </button>
+                  )}
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[10px]">
+                  <div>
+                    <span className="text-muted-foreground">w</span>{' '}
+                    <span className="text-teal">{scan.width_mm ? toDisplayValue(scan.width_mm, unit) : '—'}</span>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteId(scan.id)}
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-brand-coral"
-                    aria-label="Remove scan"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                  <div>
+                    <span className="text-muted-foreground">h</span>{' '}
+                    <span className="text-teal">{scan.height_mm ? toDisplayValue(scan.height_mm, unit) : '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">d</span>{' '}
+                    <span className={scan.depth_estimated ? 'text-coral' : 'text-teal'}>
+                      {scan.depth_mm ? toDisplayValue(scan.depth_mm, unit) : '—'}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
@@ -1032,7 +1109,7 @@ export default function HomePage({ session }: { session: Session }) {
           />
         </div>
         <div className={view === 'library' ? '' : 'hidden'}>
-          <LibraryView scans={scans} loading={scansLoading} onScanDeleted={refreshScans} />
+          <LibraryView scans={scans} loading={scansLoading} onScanDeleted={refreshScans} onGoToScan={() => setView('scan')} />
         </div>
         <div className={view === 'scan' ? '' : 'hidden'}>
           <ScanView onScanSaved={refreshScans} gestureEnabled={gestureEnabled} gloveEnabled={gloveEnabled} />
