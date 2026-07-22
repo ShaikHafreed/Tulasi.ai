@@ -1,29 +1,30 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Camera, House, Layers, Search, Settings } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import GestureStatusIndicator, { type GestureMode } from './gesture/GestureStatusIndicator'
 
+// Ported from the Lovable AppNav: liquid-glass header, numbered mono nav codes,
+// a teal sliding indicator, real gesture-status control, and a present button.
 export type DashboardView = 'dashboard' | 'scan' | 'library' | 'settings'
 
-const NAV_ITEMS: { id: DashboardView; label: string; icon: typeof House }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: House },
-  { id: 'scan', label: 'New scan', icon: Camera },
-  { id: 'library', label: 'Library', icon: Layers },
-  { id: 'settings', label: 'Settings', icon: Settings },
+const NAV_ITEMS: { id: DashboardView; label: string; code: string }[] = [
+  { id: 'dashboard', label: 'dashboard', code: '01' },
+  { id: 'scan', label: 'new scan', code: '02' },
+  { id: 'library', label: 'library', code: '03' },
+  { id: 'settings', label: 'settings', code: '04' },
 ]
 
 export default function Sidebar({
   activeView,
   onSelectView,
-  theme,
-  onToggleTheme,
+  gestureMode,
+  onSelectGestureMode,
+  onPresent,
 }: {
   activeView: DashboardView
   onSelectView: (view: DashboardView) => void
-  theme: 'dark' | 'light'
-  onToggleTheme: () => void
+  gestureMode: GestureMode
+  onSelectGestureMode: (mode: GestureMode) => void
+  onPresent: () => void
 }) {
-  const navRef = useRef<HTMLElement>(null)
   const itemRefs = useRef<Map<DashboardView, HTMLButtonElement>>(new Map())
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null)
 
@@ -35,7 +36,6 @@ export default function Sidebar({
 
   useLayoutEffect(() => {
     moveIndicatorTo(activeView)
-    // Re-measure on resize since offsetLeft/width shift as the nav reflows.
     const onResize = () => moveIndicatorTo(activeView)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -43,27 +43,20 @@ export default function Sidebar({
   }, [activeView])
 
   return (
-    <header className="fixed inset-x-0 top-0 z-10 h-17 border-b border-border bg-card/70 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
-      <div className="mx-auto flex h-full max-w-[1120px] items-center gap-7 px-7">
-        <div className="flex items-center gap-2 font-display text-[15px] font-semibold">
-          <span className="size-1.5 rounded-full bg-brand-coral" />
-          TULASI.AI
+    <header className="liquid-glass fixed inset-x-0 top-0 z-40 h-14 border-b border-border/60">
+      <div className="mx-auto flex h-full max-w-[1400px] items-center gap-8 px-6">
+        <div className="flex items-center gap-2 font-mono text-xs tracking-[0.3em] uppercase">
+          <span className="inline-block h-2 w-2 bg-teal caret-blink" />
+          <span className="text-foreground">tulasi</span>
+          <span className="text-muted-foreground">.ai</span>
         </div>
 
-        <nav
-          ref={navRef}
-          className="relative flex flex-1 items-center gap-1 overflow-x-auto"
-          onMouseLeave={() => moveIndicatorTo(activeView)}
-        >
+        <nav className="relative flex items-center" onMouseLeave={() => moveIndicatorTo(activeView)}>
           <span
-            className="pointer-events-none absolute inset-y-1 rounded-md bg-primary/12 transition-[left,width] duration-300 ease-out"
-            style={{
-              left: indicator?.left ?? 0,
-              width: indicator?.width ?? 0,
-              opacity: indicator ? 1 : 0,
-            }}
+            className="pointer-events-none absolute top-1/2 h-8 -translate-y-1/2 border border-teal/40 bg-teal/10 transition-[left,width] duration-300 ease-out"
+            style={{ left: indicator?.left ?? 0, width: indicator?.width ?? 0, opacity: indicator ? 1 : 0 }}
           />
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+          {NAV_ITEMS.map(({ id, label, code }) => (
             <button
               key={id}
               ref={(el) => {
@@ -72,35 +65,25 @@ export default function Sidebar({
               type="button"
               onClick={() => onSelectView(id)}
               onMouseEnter={() => moveIndicatorTo(id)}
-              className={cn(
-                'relative z-[1] flex h-9.5 shrink-0 items-center gap-2 rounded-md px-3.5 text-sm whitespace-nowrap text-muted-foreground transition-colors',
-                activeView === id && 'text-primary',
-              )}
+              className={`relative z-[1] flex h-8 items-center gap-2 px-3 font-mono text-[10px] tracking-[0.25em] uppercase transition-colors ${
+                activeView === id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              <Icon size={16} />
+              <span className="opacity-40">{code}</span>
               <span className="hidden sm:inline">{label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="flex shrink-0 items-center gap-3.5">
-          <div className="hidden w-40 items-center gap-2 rounded-md border border-border px-3 text-muted-foreground md:flex">
-            <Search size={14} />
-            <input
-              type="text"
-              placeholder="Search"
-              className="h-9.5 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-            <span className="rounded border border-border px-1 font-display text-[10px] text-muted-foreground">/</span>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full font-display text-[11px] tracking-[0.06em] uppercase"
-            onClick={onToggleTheme}
+        <div className="ml-auto flex items-center gap-4">
+          <GestureStatusIndicator mode={gestureMode} onSelect={onSelectGestureMode} />
+          <button
+            type="button"
+            onClick={onPresent}
+            className="flex h-8 items-center border border-teal/50 px-3 font-mono text-[10px] tracking-[0.3em] text-teal uppercase transition-colors hover:bg-teal hover:text-navy-deep"
           >
-            {theme === 'dark' ? 'Day' : 'Night'}
-          </Button>
+            present →
+          </button>
         </div>
       </div>
     </header>

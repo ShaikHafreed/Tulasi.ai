@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { Download, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
+import { type GestureMode } from './gesture/GestureStatusIndicator'
 import UploadZone from './scan/UploadZone'
 import SubjectSelect from './scan/SubjectSelect'
 import ProgressStages from './scan/ProgressStages'
@@ -26,7 +27,7 @@ import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStat
 import { Input } from '@/components/ui/input'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
-import { clearCommandHandlers, registerCommandHandlers } from '../lib/tulasiCommands'
+import { clearCommandHandlers, executeCommand, isCommandAvailable, registerCommandHandlers } from '../lib/tulasiCommands'
 import type { PrintCheckResult } from '../lib/tulasiCommands'
 import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
 import {
@@ -851,7 +852,6 @@ function SettingsView({
 
 export default function HomePage({ session }: { session: Session }) {
   const [view, setView] = useState<DashboardView>('dashboard')
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [scans, setScans] = useState<Scan[]>([])
   const [scansLoading, setScansLoading] = useState(true)
   // Lifted here (not read fresh from localStorage inside each view) because
@@ -860,9 +860,10 @@ export default function HomePage({ session }: { session: Session }) {
   const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
   const [gloveEnabled, setGloveEnabled] = useState(getGloveGestureEnabled())
 
+  // Dark-first, matching the ported design — ensure no stale light class.
   useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light')
-  }, [theme])
+    document.documentElement.classList.remove('light')
+  }, [])
 
   const refreshScans = useCallback(() => {
     if (!supabase) return
@@ -892,15 +893,41 @@ export default function HomePage({ session }: { session: Session }) {
     })
   }, [])
 
+  // Nav gesture control: webcam/glove are mutually exclusive here, all wired to
+  // the real persisted toggles.
+  const gestureMode: GestureMode = gloveEnabled ? 'glove' : gestureEnabled ? 'webcam' : 'off'
+  const selectGestureMode = useCallback((mode: GestureMode) => {
+    const webcam = mode === 'webcam'
+    const glove = mode === 'glove'
+    setGestureEnabled(webcam)
+    setWebcamGestureEnabled(webcam)
+    if (webcam) markGestureTried()
+    setGloveEnabled(glove)
+    setGloveGestureEnabled(glove)
+  }, [])
+  const present = useCallback(() => {
+    if (isCommandAvailable('togglePresentation')) executeCommand('togglePresentation', {})
+  }, [])
+
   return (
-    <div className="min-h-screen">
+    <div className="relative min-h-screen">
+      {/* Ported AppBackground — radial teal/coral glow behind the app. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            'radial-gradient(1200px 600px at 20% -10%, rgba(45,212,191,0.08), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(255,122,80,0.05), transparent 60%)',
+        }}
+      />
       <Sidebar
         activeView={view}
         onSelectView={setView}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        gestureMode={gestureMode}
+        onSelectGestureMode={selectGestureMode}
+        onPresent={present}
       />
-      <main className="mx-auto max-w-[900px] px-10 pt-27 pb-12">
+      <main className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
         {/* Every view stays mounted once visited — only hidden via CSS, never
             unmounted — so switching tabs (e.g. to Settings) doesn't kill
             ScanView's in-flight upload polling. That used to be a real bug:
