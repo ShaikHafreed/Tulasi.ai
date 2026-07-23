@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { confirmAction, runAssistantTurn } from '@/lib/tulasiAssistant'
 import { onEvent, pushEvent, type TulasiEventType } from '@/lib/tulasiEvents'
 import { cn } from '@/lib/utils'
@@ -233,15 +234,20 @@ export default function ChatPanel() {
     return (
       <>
         {liveMode && <div className="live-mode-frame" />}
-        <Button
-          variant="warm"
-          size="icon"
-          className="fixed right-6 bottom-6 z-20 size-12 rounded-full"
-          onClick={() => setOpen(true)}
-          aria-label="Open Tulasi assistant"
-        >
-          <MessageCircle size={20} />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="warm"
+              size="icon"
+              className="fixed right-6 bottom-6 z-20 size-12 rounded-full"
+              onClick={() => setOpen(true)}
+              aria-label="Open Tulasi assistant"
+            >
+              <MessageCircle size={20} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Ask Tulasi</TooltipContent>
+        </Tooltip>
       </>
     )
   }
@@ -270,19 +276,29 @@ export default function ChatPanel() {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Close assistant"
-        >
-          <X size={16} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Close assistant"
+            >
+              <X size={16} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Close</TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <span className="text-xs text-muted-foreground">Watch my actions live</span>
-        <Switch checked={liveMode} onCheckedChange={toggleLiveMode} aria-label="Toggle live mode" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Switch checked={liveMode} onCheckedChange={toggleLiveMode} aria-label="Toggle live mode" />
+          </TooltipTrigger>
+          <TooltipContent>Proactively react to what you're doing, without waiting for a message</TooltipContent>
+        </Tooltip>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">

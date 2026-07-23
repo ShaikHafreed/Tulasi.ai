@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, Header, Response, UploadFile
 
 from .. import supabase_client
 from ..errors import AppError
-from ..models.schemas import ExportRequest
+from ..models.schemas import ExportRequest, RenameScanRequest
 from ..services import exporter
 from ..services.meshy import STORAGE_DIR
 from ..services.uploads import validate_content_type, validate_size
@@ -48,6 +48,35 @@ async def upload_thumbnail(
         # The thumbnail file is saved either way — a stale Library row until
         # next refresh isn't worth failing the request over.
         logger.exception("scan image update failed for job %s", job_id)
+
+
+@router.patch("/{job_id}", status_code=204)
+async def rename_scan(
+    job_id: str,
+    body: RenameScanRequest,
+    authorization: str | None = Header(default=None),
+) -> None:
+    access_token = _require_access_token(authorization)
+
+    name = body.object_name.strip()
+    if not name:
+        raise AppError(
+            status_code=400,
+            error_code="invalid_name",
+            human_message="Name can't be empty.",
+            suggested_action="Enter a name and try again.",
+        )
+
+    try:
+        supabase_client.rename_scan(access_token, job_id=job_id, object_name=name)
+    except Exception:
+        logger.exception("scan rename failed for job %s", job_id)
+        raise AppError(
+            status_code=500,
+            error_code="rename_failed",
+            human_message="Couldn't rename that scan.",
+            suggested_action="Try again in a moment.",
+        )
 
 
 @router.post("/{job_id}/export")

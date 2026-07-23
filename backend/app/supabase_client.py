@@ -91,6 +91,12 @@ def update_scan_image(access_token: str, *, job_id: str, image_url: str) -> None
     client.table("scans").update({"image_url": image_url}).eq("job_id", job_id).execute()
 
 
+def rename_scan(access_token: str, *, job_id: str, object_name: str) -> None:
+    # Owner-scoped (user JWT → RLS), same UPDATE policy the thumbnail write uses.
+    client = _client_as(access_token)
+    client.table("scans").update({"object_name": object_name}).eq("job_id", job_id).execute()
+
+
 def set_share_slug(access_token: str, *, job_id: str, slug: str | None) -> None:
     # Owner-scoped (user JWT → RLS). Pass slug=None to disable sharing.
     client = _client_as(access_token)

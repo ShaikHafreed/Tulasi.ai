@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Download, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { Download, MoreVertical, Pencil, Share2, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import { type GestureMode } from './gesture/GestureStatusIndicator'
 import { Readout, SectionHeader } from './tulasi/Readout'
+import { ConfirmModal } from './tulasi/ConfirmModal'
+import { EmptyState } from './tulasi/EmptyState'
+import { SkeletonCard } from './tulasi/Skeleton'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import UploadZone from './scan/UploadZone'
 import ObjectRecognitionStep from './scan/ObjectRecognitionStep'
 import ProgressStages from './scan/ProgressStages'
@@ -24,7 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, uploadImages, uploadThumbnail } from '@/lib/api'
+import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, renameScan, uploadImages, uploadThumbnail } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
@@ -234,26 +240,55 @@ function LibraryView({
   onScanDeleted: () => void
   onGoToScan: () => void
 }) {
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Scan | null>(null)
   const [viewingScan, setViewingScan] = useState<Scan | null>(null)
   const [unit] = useUnit()
   const [deleting, setDeleting] = useState(false)
   const [query, setQuery] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renaming, setRenaming] = useState(false)
 
   const filtered = scans.filter((s) =>
     `${s.object_name ?? ''} ${s.job_id}`.toLowerCase().includes(query.toLowerCase()),
   )
 
-  async function confirmDelete(scan: Scan) {
+  async function confirmDelete() {
+    if (!deleteTarget) return
     setDeleting(true)
     try {
-      await deleteScan(scan.job_id)
+      await deleteScan(deleteTarget.job_id)
+      toast.success('Scan deleted')
       onScanDeleted()
+      setDeleteTarget(null)
     } catch {
-      // Swallow — the row stays visible so the user can retry.
+      toast.error("Couldn't delete that scan — try again.")
     } finally {
       setDeleting(false)
-      setConfirmDeleteId(null)
+    }
+  }
+
+  function startRename(scan: Scan) {
+    setRenamingId(scan.id)
+    setRenameValue(scan.object_name ?? '')
+  }
+
+  async function submitRename(scan: Scan) {
+    const name = renameValue.trim()
+    if (!name || name === scan.object_name) {
+      setRenamingId(null)
+      return
+    }
+    setRenaming(true)
+    try {
+      await renameScan(scan.job_id, name)
+      toast.success('Renamed')
+      onScanDeleted()
+    } catch {
+      toast.error("Couldn't rename that scan — try again.")
+    } finally {
+      setRenaming(false)
+      setRenamingId(null)
     }
   }
 
@@ -286,32 +321,33 @@ function LibraryView({
         }
       />
 
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      )}
 
       {!loading && scans.length === 0 && (
-        <div className="clay corner-ticks p-12 text-center md:p-20">
-          <svg viewBox="0 0 400 400" className="mx-auto h-40 w-40">
-            <g stroke="var(--color-teal)" strokeOpacity="0.5" strokeWidth="1.4" strokeDasharray="6 6" fill="none">
-              <path d="M 130 130 L 128 300 Q 128 320 148 322 L 252 322 Q 272 320 272 300 L 270 130 Z" />
-              <ellipse cx="200" cy="130" rx="70" ry="16" />
-              <path d="M 272 165 Q 320 175 320 220 Q 320 265 272 275" />
-            </g>
-          </svg>
-          <div className="mt-4 font-mono text-[10px] tracking-[0.3em] text-teal uppercase">no objects yet</div>
-          <h3 className="mt-3 font-display text-2xl md:text-3xl">
-            Your library is <span className="italic text-muted-foreground">calibrated and empty.</span>
-          </h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            Bring in one photo. Tulasi traces, solves, and fits it to a reference — end-to-end.
-          </p>
-          <button
-            type="button"
-            onClick={onGoToScan}
-            className="mt-6 inline-flex items-center gap-2 border border-teal bg-teal px-4 py-2 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
-          >
-            + first scan →
-          </button>
-        </div>
+        <EmptyState
+          eyebrow="no objects yet"
+          title={
+            <>
+              Your library is <span className="italic text-muted-foreground">calibrated and empty.</span>
+            </>
+          }
+          description="Bring in one photo. Tulasi traces, solves, and fits it to a reference — end-to-end."
+          action={
+            <button
+              type="button"
+              onClick={onGoToScan}
+              className="inline-flex items-center gap-2 border border-teal bg-teal px-4 py-2 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
+            >
+              + first scan →
+            </button>
+          }
+        />
       )}
 
       {!loading && scans.length > 0 && filtered.length === 0 && (
@@ -354,32 +390,55 @@ function LibraryView({
               </button>
               <div className="border-t border-border p-4">
                 <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="truncate text-sm">{scan.object_name ?? scan.job_id}</h3>
+                  {renamingId === scan.id ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      disabled={renaming}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => submitRename(scan)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitRename(scan)
+                        if (e.key === 'Escape') setRenamingId(null)
+                      }}
+                      className="w-full border-b border-teal bg-transparent text-sm focus:outline-none"
+                    />
+                  ) : (
+                    <h3 className="truncate text-sm">{scan.object_name ?? scan.job_id}</h3>
+                  )}
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                     {new Date(scan.created_at).toLocaleDateString()}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="font-mono text-[10px] text-muted-foreground">{scan.job_id.slice(0, 8)}.tul</span>
-                  {confirmDeleteId === scan.id ? (
-                    <span className="flex gap-1">
-                      <button type="button" disabled={deleting} onClick={() => confirmDelete(scan)} className="text-[11px] font-medium text-coral disabled:opacity-50">
-                        Delete
-                      </button>
-                      <button type="button" onClick={() => setConfirmDeleteId(null)} className="text-[11px] text-muted-foreground">
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(scan.id)}
-                      className="rounded p-1 text-muted-foreground transition-colors hover:text-coral"
-                      aria-label="Remove scan"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
+                  <DropdownMenu>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                            aria-label="Scan actions"
+                          >
+                            <MoreVertical size={14} />
+                          </button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>Actions</TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setViewingScan(scan)}>
+                        <Share2 size={13} /> Share
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => startRename(scan)}>
+                        <Pencil size={13} /> Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(scan)}>
+                        <Trash2 size={13} /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[10px]">
                   <div>
@@ -425,6 +484,18 @@ function LibraryView({
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete this scan?"
+        description="The model, photos, and measurements are removed for good — this can't be undone."
+        detail={deleteTarget && `${deleteTarget.object_name ?? deleteTarget.job_id} · ${deleteTarget.job_id.slice(0, 8)}.tul`}
+        confirmLabel="Delete"
+        tone="destructive"
+        busy={deleting}
+        onConfirm={confirmDelete}
+      />
     </>
   )
 }
@@ -441,8 +512,9 @@ function ShareControl({ jobId, initialSlug }: { jobId: string; initialSlug: stri
     setBusy(true)
     try {
       setSlug(await enableShare(jobId))
+      toast.success('Sharing turned on')
     } catch {
-      // Leave it off — the button stays available to retry.
+      toast.error("Couldn't turn on sharing — try again.")
     } finally {
       setBusy(false)
     }
@@ -453,8 +525,9 @@ function ShareControl({ jobId, initialSlug }: { jobId: string; initialSlug: stri
     try {
       await disableShare(jobId)
       setSlug(null)
+      toast('Sharing turned off')
     } catch {
-      // no-op
+      toast.error("Couldn't turn off sharing — try again.")
     } finally {
       setBusy(false)
     }
@@ -465,6 +538,7 @@ function ShareControl({ jobId, initialSlug }: { jobId: string; initialSlug: stri
     try {
       await navigator.clipboard.writeText(link)
       setCopied(true)
+      toast.success('Link copied')
       setTimeout(() => setCopied(false), 1500)
     } catch {
       // Clipboard may be blocked — the field is selectable as a fallback.
@@ -521,6 +595,7 @@ function ExportCard({ jobId, dims }: { jobId: string; dims: Dimensions | null })
     setFailed(false)
     try {
       await exportScan(jobId, format, dims)
+      toast.success(`Exported ${format.toUpperCase()}`)
     } catch {
       setFailed(true)
     } finally {
@@ -695,6 +770,7 @@ function ScanView({
           if (record.status === 'succeeded') {
             clearInterval(pollHandle.current!)
             setPhase('done')
+            toast.success('Scan saved to your library')
             onScanSaved()
           } else if (record.status === 'failed') {
             clearInterval(pollHandle.current!)
@@ -1084,6 +1160,8 @@ export default function HomePage({ session }: { session: Session }) {
     if (webcam) markGestureTried()
     setGloveEnabled(glove)
     setGloveGestureEnabled(glove)
+    if (mode === 'off') toast('Gesture control off')
+    else toast.success(mode === 'webcam' ? 'Webcam gestures connected' : 'Glove connected')
   }, [])
   const present = useCallback(() => {
     if (isCommandAvailable('togglePresentation')) executeCommand('togglePresentation', {})

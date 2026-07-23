@@ -19,3 +19,18 @@ def test_upload_thumbnail_rejects_bad_content_type(client, sample_image_bytes):
     )
     assert response.status_code == 400
     assert response.json()["error_code"] == "unsupported_file_type"
+
+
+def test_rename_scan_requires_auth(client):
+    response = client.patch("/api/scans/some-job", json={"object_name": "Mug"})
+    assert response.status_code == 401
+
+
+def test_rename_scan_rejects_empty_name(client):
+    response = client.patch(
+        "/api/scans/some-job",
+        json={"object_name": "   "},
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "invalid_name"

@@ -219,6 +219,15 @@ export async function uploadThumbnail(jobId: string, dataUrl: string): Promise<v
   }
 }
 
+export async function renameScan(jobId: string, objectName: string): Promise<void> {
+  const response = await fetch(`/api/scans/${jobId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ object_name: objectName }),
+  })
+  if (!response.ok) await parseErrorOrThrow(response)
+}
+
 export async function deleteScan(jobId: string): Promise<void> {
   const response = await fetch(`/api/scans/${jobId}`, {
     method: 'DELETE',

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import LandingPage from './components/LandingPage'
 import HomePage from './components/HomePage'
 import SharePage from './components/SharePage'
+import { Toaster } from './components/ui/sonner'
 import { supabase } from './lib/supabase'
 
 const SHARE_PREFIX = '/share/'
@@ -35,7 +36,12 @@ function App() {
 
   if (!checked) return null
 
-  return session ? <HomePage session={session} /> : <LandingPage />
+  return (
+    <>
+      {session ? <HomePage session={session} /> : <LandingPage />}
+      <Toaster />
+    </>
+  )
 }
 
 export default App
