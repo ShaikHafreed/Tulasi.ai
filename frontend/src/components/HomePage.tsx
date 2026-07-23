@@ -44,25 +44,7 @@ import {
   setWebcamGestureEnabled,
 } from '../lib/gesturePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
-
-const MIN_PRINTABLE_MM = 2
-const MAX_ASPECT_FOR_STABILITY = 4
-
-function printCheck(dims: Dimensions): PrintCheckResult {
-  const warnings: string[] = []
-  const values = [dims.width_mm, dims.height_mm, dims.depth_mm]
-  const smallest = Math.min(...values)
-  const largest = Math.max(...values)
-
-  if (smallest < MIN_PRINTABLE_MM) {
-    warnings.push(`Thinnest dimension is ${smallest.toFixed(1)}mm — features under ${MIN_PRINTABLE_MM}mm often fail on FDM printers.`)
-  }
-  if (largest / Math.max(smallest, 0.1) > MAX_ASPECT_FOR_STABILITY) {
-    warnings.push('Tall and narrow relative to its base — may need a brim or raft for bed stability.')
-  }
-
-  return { passed: warnings.length === 0, warnings }
-}
+import { printCheck } from '../lib/printCheck'
 
 const POLL_INTERVAL_MS = 1500
 
@@ -989,6 +971,121 @@ function SettingsPanel({ code, title, children }: { code: string; title: string;
   )
 }
 
+// Standalone print-readiness report — runs the same real printCheck()
+// heuristics the New-scan flow and the assistant's runPrintCheck command
+// use, against any of your real measured scans, not a mock/preview number.
+function PrintCheckView({
+  scans,
+  loading,
+  onGoToScan,
+}: {
+  scans: Scan[]
+  loading: boolean
+  onGoToScan: () => void
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [unit] = useUnit()
+
+  const measured = scans.filter((s) => s.width_mm && s.height_mm && s.depth_mm)
+  const selected = measured.find((s) => s.id === selectedId) ?? measured[0] ?? null
+  const result =
+    selected && selected.width_mm && selected.height_mm && selected.depth_mm
+      ? printCheck({ width_mm: selected.width_mm, height_mm: selected.height_mm, depth_mm: selected.depth_mm })
+      : null
+
+  return (
+    <>
+      <SectionHeader
+        code="05 · print check"
+        title={
+          <>
+            Will it <span className="italic text-muted-foreground">actually print?</span>
+          </>
+        }
+        hint="Real FDM heuristics run against your scan's measured dimensions — thin-feature and stability checks, not a render."
+      />
+
+      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+
+      {!loading && measured.length === 0 && (
+        <EmptyState
+          eyebrow="nothing measured yet"
+          title={
+            <>
+              Scan something <span className="italic text-muted-foreground">to check it.</span>
+            </>
+          }
+          description="Print check needs real measured dimensions — scan an object with a reference (coin or card) in frame first."
+          action={
+            <button
+              type="button"
+              onClick={onGoToScan}
+              className="inline-flex items-center gap-2 border border-teal bg-teal px-4 py-2 font-mono text-[10px] tracking-[0.3em] text-navy-deep uppercase hover:brightness-110"
+            >
+              + new scan →
+            </button>
+          }
+        />
+      )}
+
+      {!loading && selected && result && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
+          <div className="flex flex-col gap-1.5">
+            {measured.map((scan) => (
+              <button
+                key={scan.id}
+                type="button"
+                onClick={() => setSelectedId(scan.id)}
+                className={`border px-3 py-2.5 text-left transition-colors ${
+                  scan.id === selected.id ? 'border-teal bg-teal/5' : 'border-border hover:border-teal/40'
+                }`}
+              >
+                <div className="truncate text-sm">{scan.object_name ?? scan.job_id}</div>
+                <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                  {formatDimensions(scan.width_mm!, scan.height_mm!, scan.depth_mm!, unit)}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="clay corner-ticks p-6">
+            <div className="flex items-center gap-2">
+              <span className={`inline-block h-2 w-2 rounded-full ${result.passed ? 'bg-teal' : 'bg-coral'}`} />
+              <span className={`font-mono text-[11px] tracking-[0.25em] uppercase ${result.passed ? 'text-teal' : 'text-coral'}`}>
+                {result.passed ? 'print check passed' : 'print check flagged'}
+              </span>
+            </div>
+            <h3 className="mt-2 font-display text-xl">{selected.object_name ?? selected.job_id}</h3>
+
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <Readout label="w" value={toDisplayValue(selected.width_mm!, unit)} unit={unitLabel(unit)} />
+              <Readout label="h" value={toDisplayValue(selected.height_mm!, unit)} unit={unitLabel(unit)} />
+              <Readout
+                label="d"
+                value={toDisplayValue(selected.depth_mm!, unit)}
+                unit={unitLabel(unit)}
+                tone={selected.depth_estimated ? 'coral' : 'teal'}
+              />
+            </div>
+
+            {result.warnings.length > 0 ? (
+              <ul className="mt-4 flex flex-col gap-2">
+                {result.warnings.map((warning) => (
+                  <li key={warning} className="border border-coral/30 bg-coral/5 px-3 py-2 text-sm text-foreground">
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">No issues at these dimensions.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function SettingsView({
   session,
   onSignOut,
@@ -1115,6 +1212,9 @@ export default function HomePage({ session }: { session: Session }) {
   // mount would miss a toggle flipped from Settings without a remount.
   const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
   const [gloveEnabled, setGloveEnabled] = useState(getGloveGestureEnabled())
+  // Nonce the nav's "assistant" item bumps to open the real floating
+  // ChatPanel — see the comment on Sidebar's NAV_ITEMS_AFTER_ASSISTANT.
+  const [assistantOpenSignal, setAssistantOpenSignal] = useState(0)
 
   // Dark-first, matching the ported design — ensure no stale light class.
   useEffect(() => {
@@ -1184,6 +1284,7 @@ export default function HomePage({ session }: { session: Session }) {
         gestureMode={gestureMode}
         onSelectGestureMode={selectGestureMode}
         onPresent={present}
+        onOpenAssistant={() => setAssistantOpenSignal((n) => n + 1)}
       />
       <main className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
         {/* Every view stays mounted once visited — only hidden via CSS, never
@@ -1206,6 +1307,9 @@ export default function HomePage({ session }: { session: Session }) {
         <div className={view === 'scan' ? '' : 'hidden'}>
           <ScanView onScanSaved={refreshScans} gestureEnabled={gestureEnabled} gloveEnabled={gloveEnabled} />
         </div>
+        <div className={view === 'print' ? '' : 'hidden'}>
+          <PrintCheckView scans={scans} loading={scansLoading} onGoToScan={() => setView('scan')} />
+        </div>
         <div className={view === 'settings' ? '' : 'hidden'}>
           <SettingsView
             session={session}
@@ -1215,7 +1319,7 @@ export default function HomePage({ session }: { session: Session }) {
           />
         </div>
       </main>
-      <ChatPanel />
+      <ChatPanel openSignal={assistantOpenSignal} />
       <CommandPalette onNavigate={setView} onToggleGesture={toggleGesture} gestureEnabled={gestureEnabled} />
     </div>
   )

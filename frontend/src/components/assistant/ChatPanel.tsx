@@ -81,8 +81,16 @@ function loadPanelSize(): { width: number; height: number } {
   }
 }
 
-export default function ChatPanel() {
+export default function ChatPanel({ openSignal }: { openSignal?: number }) {
   const [open, setOpen] = useState(false)
+
+  // The nav's "assistant" item pings this (a changing nonce, same trigger
+  // pattern as RotationTrigger/PanTrigger) to open the real panel rather than
+  // duplicating its chat logic into a separate full-page screen.
+  useEffect(() => {
+    if (openSignal !== undefined) setOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal])
   const [liveMode, setLiveMode] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
   const [pendingAction, setPendingAction] = useState<{ forMessageId: string; action: ProposedAction } | null>(null)
