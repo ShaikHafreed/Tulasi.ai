@@ -49,8 +49,8 @@ quality, which is already commoditized (Meshy, Tripo, Rodin).
   `ProgressStages` → `ModelViewer` → `DimensionPanel`. Writes real `scans`
   rows (retains the original photo for the slider).
 - Backend routers: `generate/jobs/measure/scans/share/assistant/character/
-  voice`; services: `meshy/calibrate/validate/exporter/subject/rag/assistant/
-  voice`. Meshy single- **and** multi-image (`multi-image-to-3d`).
+  voice`; services: `meshy/calibrate/exporter/subject/rag/assistant/voice`.
+  Meshy single- **and** multi-image (`multi-image-to-3d`).
 - Presentation mode; AI assistant (Stage A); webcam + glove gestures; RAG
   over Meshy docs; character rigging; real-scale STL/GLB export
   (`services/exporter.py`, trimesh).
@@ -177,7 +177,7 @@ Tulasi.ai/
 │   │   ├── main.py            # FastAPI, CORS for the Vite dev origin
 │   │   ├── errors.py, job_store.py, supabase_client.py
 │   │   ├── routers/{generate.py, jobs.py, measure.py, assistant.py}
-│   │   ├── services/{meshy.py, calibrate.py, validate.py, assistant.py, uploads.py}
+│   │   ├── services/{meshy.py, calibrate.py, assistant.py, uploads.py}
 │   │   └── models/            # pydantic schemas
 │   ├── tests/
 │   └── requirements.txt

@@ -1002,7 +1002,7 @@ function PrintCheckView({
             Will it <span className="italic text-muted-foreground">actually print?</span>
           </>
         }
-        hint="Real FDM heuristics run against your scan's measured dimensions — thin-feature and stability checks, not a render."
+        hint="Checks your scan's measured W/H/D against two FDM printability rules (minimum feature thickness, base-to-height stability) — a dimension check, not a full mesh analysis of walls or overhangs."
       />
 
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
