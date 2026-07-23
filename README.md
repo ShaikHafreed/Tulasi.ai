@@ -57,3 +57,16 @@ build log and roadmap.
   export — asks clarifying questions instead of guessing). Built a Chrome
   extension side panel that drives the same copilot from outside the tab.
   Added a solid/wireframe view toggle to the 3D viewer.
+- **Day 15**: Repainted the whole app from dark navy/teal to a warm ivory/
+  terracotta palette via design tokens alone — zero component rewrites.
+  Caught and fixed a real bug while doing it: the landing-page mug handle
+  was rendering through the inside of the cup because of a flipped rotation
+  sign, verified the fix by actually running the 3D vertex math instead of
+  eyeballing it. Replaced pinch-based gesture control with finger counting
+  (1 finger = move, 2 = grow, 3 = shrink, open palm = rotate) on both the
+  webcam and the glove firmware. Then ran a real bug-fix pass driven by
+  actual usage: delete silently breaking after one use, a "Present" button
+  doing nothing with zero feedback, a gesture dropdown that could render
+  clipped — all root-caused and fixed, not guessed at. Also deleted a
+  fake "print-ready mesh validation" stub that promised wall-thickness and
+  overhang checks it never actually ran.
