@@ -92,6 +92,25 @@ policy scoped to rows that have a slug.)
   topped up. Anything Claude-dependent gets built behind a mock flag.
 - Google + GitHub OAuth apps, correctly configured in Supabase
 
+## Known regression risks
+
+- **Mug handle geometry** (`frontend/src/components/landing/SketchToModelHero.tsx`,
+  `Mug` component): the handle torus has clipped through the cup interior
+  across at least two prior Lovable regenerations, most recently by a flipped
+  rotation sign (`+Math.PI/2` instead of the correct `-Math.PI/2`) in the
+  2026-07-23 warm-retheme sync — verified by actually running the Three.js
+  vertex math (`TorusGeometry` + the real position/rotation transform), not
+  by eyeballing the render, since the bug is easy to miss from the default
+  hero camera angle alone. Position/rotation are named constants
+  (`CUP_RADIUS`, `HANDLE_REACH`) with a dev-mode console assertion that
+  measures every real handle vertex's distance from the mug's central axis
+  on mount and fails loudly if it dips inside `CUP_RADIUS` or fails to clear
+  `CUP_RADIUS + HANDLE_REACH`. If a future Lovable sync touches this file
+  again: diff it first, and if the incoming version changes `HANDLE_POS`/
+  `HANDLE_ROT`, re-run the vertex check before accepting it — don't assume a
+  freshly-generated Lovable output already got this right, it hasn't twice
+  before.
+
 ## Conventions
 
 - Push every commit to `origin/main` immediately, not just local commits

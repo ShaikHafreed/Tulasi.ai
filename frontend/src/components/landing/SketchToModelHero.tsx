@@ -1,21 +1,26 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { motion, useScroll, useTransform, useSpring, type MotionValue } from 'framer-motion'
 import * as THREE from 'three'
 import { useHydrated, useReducedMotion } from './useHydrated'
 
 /**
- * SketchToModelHero — ported from the Lovable design.
+ * SketchToModelHero — ported from the warm Lovable redesign (2026-07-23,
+ * "Rolled out warm retheme & detail").
  * The spine of the page. On scroll:
  *   0.00 → 0.35 : hand-drawn SVG sketch of a mug, faint scan line begins
  *   0.20 → 0.60 : wireframe emerges behind the scan line
  *   0.55 → 1.00 : solid rendered mug, rotation driven by scroll
  * A monospace calibration readout ticks up alongside it.
  *
- * Fix 1 (mug handle): the 3D handle torus is positioned at the outer cup
- * wall (x≈0.66) and rotated -90° about Z so its open side faces the body and
- * the loop bulges OUTWARD — a standard mug silhouette, never through the
- * interior. (The sketch/static-wire SVGs already draw the handle outside.)
+ * Mug handle — see CLAUDE.md "known regression risks": this geometry has
+ * broken (handle rendering through the cup interior) across multiple
+ * Lovable regenerations. The fix lives entirely in the `Mug` component below
+ * and is derived from named constants (CUP_RADIUS/HANDLE_REACH), not
+ * eyeballed coordinates, with a dev-mode assertion that measures the real
+ * mesh vertices on every mount and fails loudly if a future edit regresses
+ * it. Any Lovable resync that touches this file must be diffed against this
+ * fix before merging — do not blindly accept an incoming regeneration here.
  */
 export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -65,13 +70,15 @@ export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => 
         {/* Corner registration marks */}
         <RegistrationMarks />
 
-        {/* Faint dense grid overlay for the hero specifically */}
+        {/* Faint warm technical grid, masked to a soft circle around the stage */}
         <div
-          className="absolute inset-0 pointer-events-none opacity-40"
+          className="absolute inset-0 pointer-events-none opacity-50"
           style={{
             backgroundImage:
-              'linear-gradient(to right, rgba(45,212,191,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(45,212,191,0.06) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
+              'linear-gradient(to right, rgba(43,36,29,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(43,36,29,0.05) 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
+            maskImage: 'radial-gradient(circle at 50% 50%, black 40%, transparent 90%)',
+            WebkitMaskImage: 'radial-gradient(circle at 50% 50%, black 40%, transparent 90%)',
           }}
         />
 
@@ -95,9 +102,9 @@ export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => 
 
                 <motion.div style={{ opacity: modelOpacity }} className="absolute inset-0">
                   <Canvas camera={{ position: [0, 0.4, 3.4], fov: 40 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
-                    <ambientLight intensity={0.35} />
-                    <directionalLight position={[3, 4, 2]} intensity={1.4} color="#7fefe0" />
-                    <directionalLight position={[-3, -1, 1]} intensity={0.5} color="#ff9c78" />
+                    <ambientLight intensity={0.6} />
+                    <directionalLight position={[3, 4, 2]} intensity={1.2} color="#faf6f0" />
+                    <directionalLight position={[-3, -1, 1]} intensity={0.5} color="#c96f4a" />
                     <Mug rotY={rotY} variant="solid" />
                   </Canvas>
                 </motion.div>
@@ -120,7 +127,7 @@ export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => 
                   top: scanTop,
                   opacity: scanOpacity,
                   background: 'linear-gradient(to right, transparent, var(--color-teal), transparent)',
-                  boxShadow: '0 0 24px 4px rgba(45,212,191,0.5), 0 0 60px 12px rgba(45,212,191,0.25)',
+                  boxShadow: '0 0 24px 4px rgba(201,111,74,0.35), 0 0 60px 12px rgba(201,111,74,0.18)',
                 }}
               />
             )}
@@ -179,6 +186,29 @@ export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => 
 
 /* ---------- 3D mug (procedural, low-poly) ---------- */
 
+// The cup body is a slightly tapered cylinder — CUP_RADIUS is its top (widest)
+// radius, the boundary the handle must never render inside of.
+const CUP_RADIUS = 0.7
+const HANDLE_TORUS_RADIUS = 0.42
+const HANDLE_TUBE_RADIUS = 0.09
+// Design-intent margin: the handle's outermost point should clear the wall
+// by at least this much, so it never reads as flush/clipped even at odd
+// camera angles. Checked (not just documented) by the dev assertion below.
+const HANDLE_REACH = CUP_RADIUS * 0.4
+
+// The handle sits exactly at the cup's outer wall and its half-torus arc
+// opens toward the body, so the loop bulges OUTWARD by construction — never
+// eyeballed coordinates. Applies to both the wire and solid variants below
+// since they share this one placement.
+//
+// The rotation SIGN matters and has flipped (wrong) across regenerations
+// before: +Math.PI/2 spins the arc's bulge back toward the axis (clips
+// through the cup interior); -Math.PI/2 is the one verified below to keep
+// every vertex outside CUP_RADIUS. Do not "simplify" this sign without
+// re-running that verification.
+const HANDLE_POS: [number, number, number] = [CUP_RADIUS, 0, 0]
+const HANDLE_ROT: [number, number, number] = [0, 0, -Math.PI / 2]
+
 function Mug({ rotY, variant }: { rotY: MotionValue<number>; variant: 'wire' | 'solid' }) {
   const group = useRef<THREE.Group>(null)
 
@@ -187,23 +217,56 @@ function Mug({ rotY, variant }: { rotY: MotionValue<number>; variant: 'wire' | '
     group.current.rotation.y = rotY.get()
   })
 
-  const bodyGeom = useMemo(() => new THREE.CylinderGeometry(0.7, 0.62, 1.5, 40, 1, false), [])
-  const handleGeom = useMemo(() => new THREE.TorusGeometry(0.42, 0.09, 16, 40, Math.PI), [])
+  const bodyGeom = useMemo(() => new THREE.CylinderGeometry(CUP_RADIUS, 0.62, 1.5, 40, 1, false), [])
+  const handleGeom = useMemo(
+    () => new THREE.TorusGeometry(HANDLE_TORUS_RADIUS, HANDLE_TUBE_RADIUS, 16, 40, Math.PI),
+    [],
+  )
   const insideGeom = useMemo(() => new THREE.CylinderGeometry(0.62, 0.55, 1.35, 40, 1, true), [])
 
-  // Fix 1: handle sits at the outer wall and its arc opens toward the body,
-  // so the loop bulges outward instead of through the cup interior.
-  const HANDLE_POS: [number, number, number] = [0.66, 0, 0]
-  const HANDLE_ROT: [number, number, number] = [0, 0, -Math.PI / 2]
+  // Dev-only safeguard: measure the ACTUAL handle vertices (post transform),
+  // not a hand-derived formula, so this catches a regression regardless of
+  // how the geometry/position/rotation numbers above get edited later.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(...HANDLE_POS),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(...HANDLE_ROT)),
+      new THREE.Vector3(1, 1, 1),
+    )
+    const v = new THREE.Vector3()
+    const positions = handleGeom.attributes.position
+    let minRadius = Infinity
+    let maxRadius = 0
+    for (let i = 0; i < positions.count; i++) {
+      v.fromBufferAttribute(positions, i).applyMatrix4(matrix)
+      const radius = Math.hypot(v.x, v.z) // distance from the mug's central (Y) axis
+      minRadius = Math.min(minRadius, radius)
+      maxRadius = Math.max(maxRadius, radius)
+    }
+    if (minRadius < CUP_RADIUS - 0.01) {
+      console.error(
+        `[mug handle regression] a handle vertex is ${minRadius.toFixed(3)} units from the central axis — ` +
+          `inside the cup radius (${CUP_RADIUS}). The handle must never render through the cup interior. ` +
+          `See CLAUDE.md "known regression risks" and frontend/src/components/landing/SketchToModelHero.tsx.`,
+      )
+    }
+    if (maxRadius < CUP_RADIUS + HANDLE_REACH) {
+      console.error(
+        `[mug handle regression] the handle's outermost point (${maxRadius.toFixed(3)}) doesn't clear ` +
+          `cupRadius + handleReach (${(CUP_RADIUS + HANDLE_REACH).toFixed(3)}) — it will read as flush/clipped.`,
+      )
+    }
+  }, [handleGeom])
 
   if (variant === 'wire') {
     return (
       <group ref={group}>
         <mesh geometry={bodyGeom}>
-          <meshBasicMaterial color="#2dd4bf" wireframe transparent opacity={0.85} />
+          <meshBasicMaterial color="#c96f4a" wireframe transparent opacity={0.85} />
         </mesh>
         <mesh geometry={handleGeom} position={HANDLE_POS} rotation={HANDLE_ROT}>
-          <meshBasicMaterial color="#2dd4bf" wireframe transparent opacity={0.85} />
+          <meshBasicMaterial color="#c96f4a" wireframe transparent opacity={0.85} />
         </mesh>
       </group>
     )
@@ -212,13 +275,13 @@ function Mug({ rotY, variant }: { rotY: MotionValue<number>; variant: 'wire' | '
   return (
     <group ref={group}>
       <mesh geometry={bodyGeom} castShadow>
-        <meshStandardMaterial color="#e8ece8" roughness={0.35} metalness={0.05} />
+        <meshStandardMaterial color="#efe3d2" roughness={0.45} metalness={0.02} />
       </mesh>
       <mesh geometry={insideGeom} position={[0, 0.08, 0]}>
-        <meshStandardMaterial color="#1a1f2c" roughness={0.6} side={THREE.BackSide} />
+        <meshStandardMaterial color="#3a2e24" roughness={0.7} side={THREE.BackSide} />
       </mesh>
       <mesh geometry={handleGeom} position={HANDLE_POS} rotation={HANDLE_ROT}>
-        <meshStandardMaterial color="#e8ece8" roughness={0.35} metalness={0.05} />
+        <meshStandardMaterial color="#efe3d2" roughness={0.45} metalness={0.02} />
       </mesh>
     </group>
   )
@@ -226,6 +289,11 @@ function Mug({ rotY, variant }: { rotY: MotionValue<number>; variant: 'wire' | '
 
 /* ---------- Sketch layer (hand-drawn feel) ---------- */
 
+// NOTE: these two SVGs are hand-authored paths, not derived from
+// CUP_RADIUS/HANDLE_REACH above — they already draw the handle attached to
+// the outer wall and bulging outward (see the "handle" comment in each). If
+// the 3D constants above ever change enough to visibly shift the handle's
+// proportions, re-check these by eye; they won't update automatically.
 function MugSketch() {
   return (
     <svg viewBox="0 0 400 400" className="h-full w-full">
