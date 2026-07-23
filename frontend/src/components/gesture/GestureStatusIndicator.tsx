@@ -1,9 +1,15 @@
-import { motion, AnimatePresence } from 'framer-motion'
-import { useState } from 'react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 // Ported from the Lovable design, wired to REAL gesture state. off /
 // webcam-active / glove-linked reflect the actual persisted toggles, and
 // selecting one flips them (webcam and glove are mutually exclusive here).
+//
+// Uses Radix DropdownMenu (portals to document.body) rather than a hand-rolled
+// absolutely-positioned dropdown — the nav header uses `backdrop-filter`
+// (.liquid-glass), which creates its own stacking/containing context, and a
+// dropdown positioned relative to an element inside that context can render
+// clipped near the header's edge in some browsers. Portaling out of the
+// header sidesteps that entire class of issue regardless of the exact cause.
 export type GestureMode = 'off' | 'webcam' | 'glove'
 
 const LABELS: Record<GestureMode, { label: string; hint: string; color: string; dot: string }> = {
@@ -19,60 +25,43 @@ export default function GestureStatusIndicator({
   mode: GestureMode
   onSelect: (mode: GestureMode) => void
 }) {
-  const [open, setOpen] = useState(false)
   const meta = LABELS[mode]
 
-  function select(next: GestureMode) {
-    onSelect(next)
-    setOpen(false)
-  }
-
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`inline-flex h-8 items-center gap-2 border bg-transparent px-3 font-mono text-[10px] tracking-[0.25em] uppercase transition-colors ${meta.color}`}
-      >
-        <span className="relative inline-flex h-1.5 w-1.5">
-          {mode !== 'off' && <span className={`absolute inset-0 rounded-full ${meta.dot} animate-ping opacity-60`} />}
-          <span className={`relative inline-block h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-        </span>
-        {meta.label}
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            className="clay absolute right-0 top-full z-50 mt-2 w-64 p-2"
-          >
-            <div className="px-2 py-2 font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">input source</div>
-            {(['off', 'webcam', 'glove'] as GestureMode[]).map((m) => {
-              const active = m === mode
-              const info = LABELS[m]
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => select(m)}
-                  className={`flex w-full items-center gap-3 px-2 py-2 text-left hover:bg-teal/5 ${active ? 'bg-teal/5' : ''}`}
-                >
-                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${info.dot}`} />
-                  <div className="flex-1">
-                    <div className={`font-mono text-[10px] tracking-[0.2em] uppercase ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
-                      {info.label}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[9px] text-muted-foreground/70">{info.hint}</div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`inline-flex h-8 items-center gap-2 border bg-transparent px-3 font-mono text-[10px] tracking-[0.25em] uppercase transition-colors ${meta.color}`}
+        >
+          <span className="relative inline-flex h-1.5 w-1.5">
+            {mode !== 'off' && <span className={`absolute inset-0 rounded-full ${meta.dot} animate-ping opacity-60`} />}
+            <span className={`relative inline-block h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+          </span>
+          {meta.label}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64 p-2">
+        <div className="px-2 py-2 font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">input source</div>
+        {(['off', 'webcam', 'glove'] as GestureMode[]).map((m) => {
+          const active = m === mode
+          const info = LABELS[m]
+          return (
+            <DropdownMenuItem key={m} onClick={() => onSelect(m)} className="flex-col items-stretch gap-0 py-2">
+              <div className="flex w-full items-center gap-3">
+                <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${info.dot}`} />
+                <div className="flex-1">
+                  <div className={`font-mono text-[10px] tracking-[0.2em] uppercase ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {info.label}
                   </div>
-                  {active && <span className="text-xs text-teal">●</span>}
-                </button>
-              )
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+                  <div className="mt-0.5 font-mono text-[9px] text-muted-foreground/70">{info.hint}</div>
+                </div>
+                {active && <span className="text-xs text-teal">●</span>}
+              </div>
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
