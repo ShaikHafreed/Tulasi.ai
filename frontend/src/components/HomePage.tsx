@@ -1264,7 +1264,12 @@ export default function HomePage({ session }: { session: Session }) {
     else toast.success(mode === 'webcam' ? 'Webcam gestures connected' : 'Glove connected')
   }, [])
   const present = useCallback(() => {
+    // togglePresentation is only registered while a ModelViewer is actually
+    // mounted (viewing a scan) — clicking Present from Dashboard/Library-
+    // without-a-model-open/Settings/Print check/Assistant has nothing to
+    // fullscreen, so say so instead of silently doing nothing.
     if (isCommandAvailable('togglePresentation')) executeCommand('togglePresentation', {})
+    else toast('Open a scan first — Present fullscreens its 3D model.')
   }, [])
 
   return (

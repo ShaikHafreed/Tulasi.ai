@@ -72,10 +72,13 @@ export function ConfirmModal({
               {cancelLabel}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault()
-                onConfirm()
-              }}
+              // No preventDefault — let Radix close the dialog through its own
+              // supported flow (Action's default behavior) in the same click,
+              // instead of gating the close behind the async onConfirm() work
+              // finishing. Tying dialog lifecycle to a network round-trip is
+              // what caused the delete option to sometimes need a page
+              // refresh before it would respond again on other cards.
+              onClick={() => onConfirm()}
               disabled={busy}
               className={`h-10 rounded-full px-4 text-sm font-medium transition-all disabled:opacity-50 ${
                 isDestructive
