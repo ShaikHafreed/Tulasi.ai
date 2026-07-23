@@ -42,17 +42,24 @@ pio device monitor       # 115200 baud serial monitor
 
 ## Gesture mapping
 
-| Gesture       | How                                   | Sensor          |
-| ------------- | ------------------------------------- | --------------- |
-| `resize_up`   | splay fingers flat/wide, hold         | flex (below baseline) |
-| `resize_down` | curl into a fist, hold                | flex (above baseline) |
-| `rotate`      | actively twist the wrist              | gyro (twist rate) |
-| `move`        | tilt the flat hand & hold a direction | accel (tilt from anchor) |
+Finger-count scheme — matches the webcam track exactly, just read from flex
+sensors instead of a camera:
 
-Every gesture is a **held pose**: holding it keeps emitting (~50Hz) instead of
-firing once. Move/rotate re-center to wherever your hand rests when it returns
-to neutral (no dedicated recenter gesture). Priority per frame is
-resize → rotate → move, so a deliberate pose always wins over incidental drift.
+| Gesture       | Finger pose                          | Direction/twist source |
+| ------------- | ------------------------------------- | --------------- |
+| `move`        | index finger only extended            | accel tilt from anchor (up/down/left/right) |
+| `resize_up`   | index + middle extended               | — (hold-repeat step) |
+| `resize_down` | index + middle + ring extended        | — (hold-repeat step) |
+| `rotate`      | all five extended (open palm) + twist | gyro (twist rate) |
+
+Any other combination (e.g. four fingers) is deliberately unmapped — neutral,
+no action. `rotate` is a **held pose**: holding it keeps emitting (~50Hz)
+instead of firing once. `move`/`resize_up`/`resize_down` instead fire as
+discrete hold-repeat steps — one immediate step the instant the finger pose
+is stable, then a slower repeat every ~180ms while it's held, same cadence as
+the webcam track's `holdRepeat.ts`. Move/rotate's tilt/twist reference
+re-centers to wherever your hand rests when it returns to neutral (no
+dedicated recenter gesture). Priority per frame is rotate → resize → move.
 
 Honest limitation: the MPU6050 has no magnetometer, so there's no reliable yaw.
 `move` gets up/down from pitch and left/right from roll, and `rotate` uses the
@@ -73,8 +80,10 @@ flex -12,4,-8,2,0  roll 3.1  pitch -1.4  gyro 2,-1,0  ble down
 **Verify the raw numbers move sensibly first** (bend fingers → `flex` moves,
 twist wrist → `gyro` spikes, tilt → `roll`/`pitch` move) *before* trusting any
 `>>` gesture line. Then adjust the named thresholds at the top of
-[`src/gestures.cpp`](src/gestures.cpp) — `FLEX_CLENCH_THRESHOLD`,
-`FLEX_SPREAD_THRESHOLD`, `ROTATE_RATE_DEADZONE`, `MOVE_TILT_DEADZONE_DEG`, etc.
+[`src/gestures.cpp`](src/gestures.cpp) — `FLEX_CURL_THRESHOLD` (per-finger,
+the one to retune first — it depends on your voltage dividers and finger
+travel), `ROTATE_RATE_DEADZONE`, `MOVE_TILT_DEADZONE_DEG`,
+`HOLD_REPEAT_DELAY_MS`/`HOLD_REPEAT_INTERVAL_MS`, etc.
 Set `DEBUG_SERIAL 0` for battery/production use.
 
 ## BLE contract

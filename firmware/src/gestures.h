@@ -38,8 +38,12 @@ namespace gestures {
 void reset();
 
 // Classifies one filtered frame. Returns true and fills `out` when a gesture
-// should be emitted this frame (held poses emit continuously, every frame,
-// once debounced), false when the hand is neutral / mid-transition.
+// should be emitted this frame, false when the hand is neutral / mid-
+// transition. Rotate emits continuously, every frame, once debounced (an
+// active twist, not a held shape). Move/ResizeUp/ResizeDown are discrete
+// hold-repeat steps instead — one immediate step when the finger pose
+// becomes stable, then a slower repeat while it's held, matching the webcam
+// track's holdRepeat.ts.
 bool classify(const SensorFrame &f, uint32_t nowMs, GestureEvent &out);
 
 }  // namespace gestures

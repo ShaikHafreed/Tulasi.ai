@@ -1,8 +1,12 @@
 import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision'
+import { HoldRepeat } from './holdRepeat'
 
-// Same 4 gestures Track 2 (the physical glove) will classify from flex/IMU
+// Same 4 gestures Track 2 (the physical glove) classifies from flex/IMU
 // data — keep this contract stable so gestureToCommand.ts can map both
-// tracks through one shared function.
+// tracks through one shared function. Naming kept from the earlier
+// pinch/anchor design (resize_up/resize_down) even though the trigger is now
+// finger-count based, since gestureToCommand.ts and the glove firmware's
+// Gesture enum both already speak these names.
 export type GestureType = 'rotate' | 'move' | 'resize_up' | 'resize_down'
 
 export interface GestureEvent {
@@ -22,8 +26,8 @@ export interface TrackedPoint {
 // Live raw numbers behind the current classification, surfaced to the debug
 // panel so thresholds below can be retuned by eye.
 export interface GestureDebugInfo {
-  pinch: number
-  moveDist: number
+  fingers: { thumb: boolean; index: boolean; middle: boolean; ring: boolean; pinky: boolean }
+  fingerCount: number
   rotateDeltaDeg: number
 }
 
@@ -41,30 +45,36 @@ const FRAME_INTERVAL_MS = 1000 / 18
 const MIN_HAND_CONFIDENCE = 0.5
 
 // A classified gesture TYPE must persist this long before it starts firing —
-// debounces the noisy transitions between poses, matching the glove firmware's
-// 150ms hold. Once stable, a held pose fires every processed frame.
+// debounces the noisy transitions between finger poses (1↔2 and 2↔3 fingers
+// are the most flicker-prone), matching the glove firmware's 150ms hold.
 const DEBOUNCE_MS = 150
 
-// All four gestures are HELD POSES relative to a neutral reference, judged
-// every processed frame — not one-shot motions:
-//  - Resize compares pinch distance to a fixed absolute open/closed threshold.
-//  - Move/rotate compare against an ANCHOR captured the moment the hand first
-//    becomes trackable (a joystick centered wherever the hand rested); holding
-//    away from it keeps firing, returning near it stops. The anchor re-centers
-//    whenever tracking is lost and regained.
+// FINGER-COUNT SCHEME — supersedes the old pinch/palm-anchor design:
+//   0 fingers (fist)                          → neutral, no action
+//   1 finger  (index only)                    → Move, direction = where the finger points
+//   2 fingers (index + middle)                → Increase — instant step, then hold-repeat
+//   3 fingers (index + middle + ring)          → Decrease — instant step, then hold-repeat
+//   5 fingers (open palm) + wrist twist        → Rotate — unchanged continuous behavior
+// Any other combination (e.g. 4 fingers) is deliberately unmapped and treated
+// as neutral rather than guessing.
 //
-// Thresholds tuned by eye against the debug overlay — retune after real usage.
-const PINCH_OPEN_THRESHOLD = 0.09
-const PINCH_CLOSED_THRESHOLD = 0.035
-const RESIZE_BASE_MAGNITUDE = 0.05
-const RESIZE_MAGNITUDE_GAIN = 3
-
-const MOVE_DEAD_ZONE = 0.06
-const MOVE_MAGNITUDE_GAIN = 4
+// A non-thumb finger is "extended" when its tip sits farther from the wrist
+// than its own PIP joint does, by a hand-size-relative margin (hand size is
+// itself measured as wrist→middle-MCP distance, so this works regardless of
+// how close the hand is to the camera). The thumb moves sideways rather than
+// up/down, so it's judged by tip-to-index-MCP spread instead.
+const EXTENDED_MARGIN_RATIO = 0.15
+const THUMB_SPREAD_RATIO = 0.55
 
 const ROTATE_DEAD_ZONE_DEG = 10
 const ROTATE_STEP_DEGREES_PER_FRAME = 4
-const ROTATE_MAGNITUDE_GAIN = 1 / 30
+const ROTATE_MAGNITUDE_RATE = 1 / 30
+
+// Hold-repeat step sizes for move/increase/decrease — see holdRepeat.ts. The
+// first step is a full, deliberate jump; repeat ticks (while still held past
+// HOLD_REPEAT_DELAY_MS) are smaller, reading as a slow continuous change.
+const INITIAL_STEP_MAGNITUDE = 1
+const REPEAT_STEP_MAGNITUDE = 0.35
 
 // Self-hosted (public/mediapipe/) rather than pulled from external CDNs some
 // networks block — that broke gesture control with an opaque "[object Event]"
@@ -116,6 +126,18 @@ export interface WebcamGestureHandlers {
   onGesture: (event: GestureEvent) => void
 }
 
+interface FingerState {
+  thumb: boolean
+  index: boolean
+  middle: boolean
+  ring: boolean
+  pinky: boolean
+}
+
+function countExtended(fingers: FingerState): number {
+  return Number(fingers.thumb) + Number(fingers.index) + Number(fingers.middle) + Number(fingers.ring) + Number(fingers.pinky)
+}
+
 // What a frame classifies to before debouncing — the type plus its already-
 // computed parameters, or null when the hand is neutral / mid-transition.
 type Classified = Omit<GestureEvent, 'timestamp'> | null
@@ -131,14 +153,17 @@ export class WebcamGestureTracker {
   private stopped = true
   private generation = 0
 
-  // Single-hand joystick center. Re-centers whenever the hand is lost.
-  private anchorPalm: { x: number; y: number } | null = null
+  // Rotate's wrist-angle joystick center. Re-centers whenever the hand is lost.
   private anchorAngleDeg: number | null = null
 
-  // Debounce state for the classified gesture type.
-  private candidateType: GestureType | null = null
+  // Debounce state for the classified gesture type (+ direction, so a move
+  // that changes direction re-debounces rather than instantly snapping).
+  private candidateKey: string | null = null
   private candidateSince = 0
-  private activeType: GestureType | null = null
+  private activeKey: string | null = null
+
+  // Discrete instant-then-repeat firing for move/increase/decrease.
+  private holdRepeat = new HoldRepeat()
 
   constructor(video: HTMLVideoElement, handlers: WebcamGestureHandlers) {
     this.video = video
@@ -171,10 +196,10 @@ export class WebcamGestureTracker {
   }
 
   private resetTracking(): void {
-    this.anchorPalm = null
     this.anchorAngleDeg = null
-    this.candidateType = null
-    this.activeType = null
+    this.candidateKey = null
+    this.activeKey = null
+    this.holdRepeat.stop()
   }
 
   private processResult(result: HandLandmarkerResult, time: number): void {
@@ -194,83 +219,114 @@ export class WebcamGestureTracker {
 
     const wrist = hand[0]
     const thumbTip = hand[4]
-    const indexTip = hand[8]
     const indexMcp = hand[5]
+    const indexPip = hand[6]
+    const indexTip = hand[8]
     const middleMcp = hand[9]
-    const ringMcp = hand[13]
-    const pinkyMcp = hand[17]
+    const middlePip = hand[10]
+    const middleTip = hand[12]
+    const ringPip = hand[14]
+    const ringTip = hand[16]
+    const pinkyPip = hand[18]
+    const pinkyTip = hand[20]
 
-    const pinch = distance2d(thumbTip, indexTip)
-    const palm = {
-      x: (wrist.x + indexMcp.x + middleMcp.x + ringMcp.x + pinkyMcp.x) / 5,
-      y: (wrist.y + indexMcp.y + middleMcp.y + ringMcp.y + pinkyMcp.y) / 5,
+    // Hand-size reference so the extended/curled thresholds scale with how
+    // close the hand is to the camera, not just raw pixel/normalized distance.
+    const handSpan = distance2d(wrist, middleMcp) || 1
+
+    const extended = (tip: TrackedPoint, pip: TrackedPoint) =>
+      distance2d(tip, wrist) > distance2d(pip, wrist) + EXTENDED_MARGIN_RATIO * handSpan
+
+    const fingers: FingerState = {
+      thumb: distance2d(thumbTip, indexMcp) > THUMB_SPREAD_RATIO * handSpan,
+      index: extended(indexTip, indexPip),
+      middle: extended(middleTip, middlePip),
+      ring: extended(ringTip, ringPip),
+      pinky: extended(pinkyTip, pinkyPip),
     }
+
     const angleDeg = (Math.atan2(middleMcp.y - wrist.y, middleMcp.x - wrist.x) * 180) / Math.PI
-
-    if (this.anchorPalm === null) this.anchorPalm = palm
     if (this.anchorAngleDeg === null) this.anchorAngleDeg = angleDeg
-
-    const dx = palm.x - this.anchorPalm.x
-    const dy = palm.y - this.anchorPalm.y
-    const moveDist = Math.hypot(dx, dy)
-
     let rotateDeltaDeg = angleDeg - this.anchorAngleDeg
     if (rotateDeltaDeg > 180) rotateDeltaDeg -= 360
     if (rotateDeltaDeg < -180) rotateDeltaDeg += 360
 
-    this.handlers.onDebug?.({ pinch, moveDist, rotateDeltaDeg })
+    this.handlers.onDebug?.({ fingers, fingerCount: countExtended(fingers), rotateDeltaDeg })
 
-    const classified = this.classify(pinch, dx, dy, moveDist, rotateDeltaDeg)
+    const classified = this.classify(fingers, indexMcp, indexTip, rotateDeltaDeg)
     this.emitDebounced(classified, time)
   }
 
-  // Priority: resize (a deliberate pinch) > move (translation) > rotate (twist).
-  private classify(pinch: number, dx: number, dy: number, moveDist: number, rotateDeltaDeg: number): Classified {
-    if (pinch > PINCH_OPEN_THRESHOLD) {
-      const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (pinch - PINCH_OPEN_THRESHOLD) * RESIZE_MAGNITUDE_GAIN, 1)
-      return { gesture: 'resize_up', magnitude }
-    }
-    if (pinch < PINCH_CLOSED_THRESHOLD) {
-      const magnitude = Math.min(RESIZE_BASE_MAGNITUDE + (PINCH_CLOSED_THRESHOLD - pinch) * RESIZE_MAGNITUDE_GAIN, 1)
-      return { gesture: 'resize_down', magnitude }
-    }
-    if (moveDist > MOVE_DEAD_ZONE) {
+  // Exact-match on which fingers are extended — not just a count — so 4
+  // fingers (an unmapped, transition-prone combination) never accidentally
+  // reads as "close enough" to 3 or 5.
+  private classify(
+    fingers: FingerState,
+    indexMcp: TrackedPoint,
+    indexTip: TrackedPoint,
+    rotateDeltaDeg: number,
+  ): Classified {
+    const { thumb, index, middle, ring, pinky } = fingers
+
+    if (index && !middle && !ring && !pinky) {
+      const dx = indexTip.x - indexMcp.x
+      const dy = indexTip.y - indexMcp.y
       const direction: GestureEvent['direction'] =
         Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
-      const magnitude = Math.min((moveDist - MOVE_DEAD_ZONE) * MOVE_MAGNITUDE_GAIN, 1)
-      return { gesture: 'move', magnitude, direction }
+      return { gesture: 'move', magnitude: INITIAL_STEP_MAGNITUDE, direction }
     }
-    if (Math.abs(rotateDeltaDeg) > ROTATE_DEAD_ZONE_DEG) {
+    if (index && middle && !ring && !pinky) {
+      return { gesture: 'resize_up', magnitude: INITIAL_STEP_MAGNITUDE }
+    }
+    if (index && middle && ring && !pinky) {
+      return { gesture: 'resize_down', magnitude: INITIAL_STEP_MAGNITUDE }
+    }
+    if (thumb && index && middle && ring && pinky && Math.abs(rotateDeltaDeg) > ROTATE_DEAD_ZONE_DEG) {
       const excess = Math.abs(rotateDeltaDeg) - ROTATE_DEAD_ZONE_DEG
-      const magnitude = Math.min(excess * ROTATE_MAGNITUDE_GAIN, 1)
+      const magnitude = Math.min(excess * ROTATE_MAGNITUDE_RATE, 1)
       const signedDelta = Math.sign(rotateDeltaDeg) * magnitude * ROTATE_STEP_DEGREES_PER_FRAME
       return { gesture: 'rotate', magnitude, signedDelta }
     }
     return null
   }
 
-  // Only fire once a gesture type has been stable for DEBOUNCE_MS — so brief
-  // flickers during hand transitions don't misfire; a held pose then fires
-  // every frame.
+  // Debounces the classified gesture (+ direction/key) the same way the old
+  // tracker debounced type alone — a candidate must be stable for
+  // DEBOUNCE_MS before it's accepted. Once accepted, rotate fires every
+  // processed frame (continuous, unchanged); move/increase/decrease instead
+  // hand off to HoldRepeat for the instant-then-repeat cadence.
   private emitDebounced(classified: Classified, time: number): void {
-    const type = classified?.gesture ?? null
+    const key = classified ? `${classified.gesture}:${classified.direction ?? ''}` : null
 
-    if (type !== this.candidateType) {
-      this.candidateType = type
+    if (key !== this.candidateKey) {
+      this.candidateKey = key
       this.candidateSince = time
     }
 
-    if (type === null) {
-      this.activeType = null
+    if (key === null) {
+      this.activeKey = null
+      this.holdRepeat.update(null, () => {})
       return
     }
 
-    if (this.activeType !== type && time - this.candidateSince >= DEBOUNCE_MS) {
-      this.activeType = type
+    if (this.activeKey !== key && time - this.candidateSince >= DEBOUNCE_MS) {
+      this.activeKey = key
     }
 
-    if (this.activeType === type && classified) {
+    if (this.activeKey !== key || !classified) return
+
+    if (classified.gesture === 'rotate') {
+      this.holdRepeat.update(null, () => {}) // rotate never uses hold-repeat
       this.handlers.onGesture({ ...classified, timestamp: time })
+      return
     }
+
+    this.holdRepeat.update(key, (_k, isFirst) => {
+      this.handlers.onGesture({
+        ...classified,
+        magnitude: isFirst ? INITIAL_STEP_MAGNITUDE : REPEAT_STEP_MAGNITUDE,
+        timestamp: performance.now(),
+      })
+    })
   }
 }

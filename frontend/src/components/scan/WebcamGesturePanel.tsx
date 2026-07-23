@@ -26,9 +26,11 @@ const CONNECTIONS: Array<[number, number]> = [
 const GESTURE_LABELS: Record<GestureEvent['gesture'], string> = {
   rotate: 'Rotate',
   move: 'Move',
-  resize_up: 'Resize +',
-  resize_down: 'Resize −',
+  resize_up: 'Increase',
+  resize_down: 'Decrease',
 }
+
+const FINGER_ORDER = ['thumb', 'index', 'middle', 'ring', 'pinky'] as const
 
 type Status = 'idle' | 'starting' | 'loading-model' | 'active' | 'unsupported' | 'error'
 
@@ -246,9 +248,22 @@ export default function WebcamGesturePanel({
       </div>
 
       {status === 'active' && (
-        <div className="grid grid-cols-3 gap-1 border-t border-border px-2.5 py-1.5 text-center text-[10px] text-muted-foreground">
-          <span>pinch {debug ? debug.pinch.toFixed(3) : '—'}</span>
-          <span>move {debug ? debug.moveDist.toFixed(3) : '—'}</span>
+        <div className="flex items-center justify-center gap-2 border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">
+          <span className="flex gap-1">
+            {FINGER_ORDER.map((finger) => (
+              <span
+                key={finger}
+                className={cn(
+                  'flex size-4 items-center justify-center rounded-sm border border-border uppercase',
+                  debug?.fingers[finger] && 'border-primary bg-primary/20 text-primary',
+                )}
+                title={finger}
+              >
+                {finger[0]}
+              </span>
+            ))}
+          </span>
+          <span>{debug ? debug.fingerCount : 0} up</span>
           <span>tilt {debug ? debug.rotateDeltaDeg.toFixed(0) : '—'}°</span>
         </div>
       )}

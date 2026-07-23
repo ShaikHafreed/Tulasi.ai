@@ -65,18 +65,50 @@ identifies the object(s) (Claude vision when credit exists; an honest OpenCV
 box guess with a *null* label in mock mode — never a faked label). The scan
 flow is Upload → **recognise/confirm/adjust** → crop → Generate.
 
-**Gestures (done, single-hand):** `lib/webcamGesture.ts` is `numHands=1`,
-ignores any second hand, skips low-confidence frames (handedness score < 0.5),
-and 150ms-debounces the classified gesture type before firing. Unified
-`components/gesture/GestureStatusIndicator` (off / webcam-active / glove-linked)
-lives in the nav, wired to the real persisted toggles.
+**Gestures (done, single-hand, finger-count scheme):** `lib/webcamGesture.ts`
+is `numHands=1`, ignores any second hand, skips low-confidence frames
+(handedness score < 0.5), and 150ms-debounces the classified gesture before
+firing. Both tracks (webcam + glove) read the SAME finger-count scheme —
+supersedes the earlier pinch/flat-hand-translate design, which is removed,
+not kept as a fallback:
+- 1 finger (index only) → Move, direction = where the finger points (webcam:
+  landmarks 5→8; glove: still IMU tilt — flex sensors carry no pointing data)
+- 2 fingers (index+middle) → Increase; 3 fingers (+ring) → Decrease — both
+  discrete **hold-repeat** steps (`lib/holdRepeat.ts`: one immediate step,
+  then a slower repeat every ~180ms while held past a 400ms delay, no
+  residual momentum on release) — not continuous magnitude-per-frame anymore
+- 5 fingers (open palm) + wrist twist → Rotate — unchanged continuous
+  behavior, just now gated behind the open-palm pose instead of "any
+  non-resize pose"
+- Any other combination (e.g. 4 fingers) is deliberately unmapped/neutral
+- Webcam: per-finger extended/curled from landmark tip-vs-PIP distance from
+  the wrist, hand-size-normalized (`EXTENDED_MARGIN_RATIO`); thumb judged by
+  tip-to-index-MCP spread. Glove: per-finger curled/extended directly from
+  each calibrated flex channel (`FLEX_CURL_THRESHOLD` in
+  `firmware/src/gestures.cpp`) — same named-constant, held-pose, debounced
+  design as before, just per-finger instead of a whole-hand mean.
 
-**Full Lovable UI ported:** the app shell (numbered mono nav, teal sliding
-indicator, gesture status, present button, radial glow), Dashboard, Library,
-Settings, and ProgressStages all carry the Lovable design on **real data**.
-Deferred: assistant full-screen restyle (the floating `ChatPanel` is already
-on-brand + real) and a standalone print-report screen (needs a new nav item +
-real validation surface).
+Unified `components/gesture/GestureStatusIndicator` (off / webcam-active /
+glove-linked) lives in the nav, wired to the real persisted toggles.
+
+**Full Lovable UI ported, warm retheme (2026-07-23):** dark navy/teal/coral +
+blueprint-grid replaced app-wide by a warm palette — ivory `#faf6f0`, espresso
+`#2b241d`, terracotta `#c96f4a` primary, sage `#7a9b8e` secondary, amber
+`#c4622e` warnings — via `index.css` token values only, so every existing
+`text-teal`/`bg-navy-deep`/`.clay`/`.liquid-glass` usage repainted without
+touching component code. Fraunces added as the display font (falls back to
+Instrument Serif). App shell (numbered mono nav, sliding indicator, gesture
+status, present button), Dashboard, Library, Settings, and ProgressStages all
+carry the design on **real data**. New this pass: `ConfirmModal`/`Toaster`
+(sonner)/`Skeleton*`/`EmptyState`/`Tooltip` components wired to real actions
+(delete, rename, export, share toggle/copy, gesture connect); Library
+quick-actions hover menu with real rename (`PATCH /api/scans/{id}`); a
+6-item nav (dashboard/new scan/**assistant**/library/**print check**/
+settings) — assistant opens the real floating `ChatPanel` rather than a
+separate screen (it's a tested floating panel, not a route); print check is
+a real new screen (`PrintCheckView`) running the same `printCheck()`
+heuristics (shared via `lib/printCheck.ts`) the New-scan flow already used,
+against any real measured scan.
 
 **`scans` table** (Supabase, RLS enabled, FK `user_id -> auth.users.id`):
 `id, user_id, job_id, object_name, model_url, image_url, source_image_url,
