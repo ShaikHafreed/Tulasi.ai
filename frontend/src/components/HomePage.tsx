@@ -1091,13 +1091,13 @@ export default function HomePage({ session }: { session: Session }) {
 
   return (
     <div className="relative min-h-screen">
-      {/* Ported AppBackground — radial teal/coral glow behind the app. */}
+      {/* Ported AppBackground — warm terracotta/sage ambient wash behind the app. */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(1200px 600px at 20% -10%, rgba(45,212,191,0.08), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(255,122,80,0.05), transparent 60%)',
+            'radial-gradient(1200px 600px at 20% -10%, rgba(201,111,74,0.06), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(122,155,142,0.06), transparent 60%)',
         }}
       />
       <Sidebar

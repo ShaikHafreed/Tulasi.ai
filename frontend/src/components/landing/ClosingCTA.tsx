@@ -20,8 +20,8 @@ export function ClosingCTA({ onRequestAccess }: { onRequestAccess: () => void })
             <svg viewBox="0 0 400 400" className="w-48 md:w-64 h-48 md:h-64">
               <defs>
                 <linearGradient id="mugFill" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#1f3a4a" />
-                  <stop offset="100%" stopColor="#141d2c" />
+                  <stop offset="0%" stopColor="#efe3d2" />
+                  <stop offset="100%" stopColor="#d9c7ae" />
                 </linearGradient>
                 <linearGradient id="mugStroke" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--color-teal)" />
@@ -30,7 +30,7 @@ export function ClosingCTA({ onRequestAccess }: { onRequestAccess: () => void })
               </defs>
               <g stroke="url(#mugStroke)" strokeWidth="1.4" fill="url(#mugFill)">
                 <path d="M 130 130 L 128 300 Q 128 320 148 322 L 252 322 Q 272 320 272 300 L 270 130 Z" />
-                <ellipse cx="200" cy="130" rx="70" ry="16" fill="#0b0f1a" stroke="var(--color-teal)" />
+                <ellipse cx="200" cy="130" rx="70" ry="16" fill="#3a2e24" stroke="var(--color-teal)" />
                 {/* handle — attached to the outer wall, bulging outward */}
                 <path d="M 272 165 Q 320 175 320 220 Q 320 265 272 275" fill="none" />
               </g>

@@ -74,7 +74,7 @@ export function CalibrationDemo() {
             <div className="absolute inset-0 flex items-end justify-center gap-10 pb-24 md:pb-28">
               {/* Credit card */}
               <motion.div style={{ opacity: cardAppear, y: cardY }} className="relative">
-                <div className="w-40 md:w-56 aspect-[85.6/53.98] rounded-md bg-gradient-to-br from-[#1a2540] to-[#0d1526] border border-teal/40 shadow-[0_10px_40px_-10px_rgba(45,212,191,0.4)] p-3 flex flex-col justify-between">
+                <div className="w-40 md:w-56 aspect-[85.6/53.98] rounded-md bg-gradient-to-br from-[#f3ece2] to-[#e3d3bd] border border-teal/40 shadow-[0_10px_40px_-10px_rgba(201,111,74,0.35)] p-3 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
                     <div className="w-7 h-5 rounded-sm bg-gradient-to-br from-coral/80 to-coral/30" />
                     <div className="font-mono text-[8px] tracking-[0.2em] text-teal uppercase">ref · iso7810</div>
@@ -113,7 +113,7 @@ export function CalibrationDemo() {
                 <motion.div className="absolute top-0 h-6 w-px bg-coral" style={{ left: rightTickLeft }} />
                 <motion.div
                   className="absolute top-1/2 left-0 h-px bg-coral"
-                  style={{ width: lineWidth, boxShadow: '0 0 8px rgba(255,122,80,0.6)' }}
+                  style={{ width: lineWidth, boxShadow: '0 0 8px rgba(196,98,46,0.55)' }}
                 />
                 <motion.div className="absolute -top-6 font-mono text-[11px] md:text-xs tracking-[0.15em] text-coral" style={{ left: numberLeft }}>
                   <motion.span>{numberText}</motion.span>
