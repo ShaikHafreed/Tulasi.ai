@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Camera, Download, Hand, LayoutDashboard, Library, Maximize2, Settings } from 'lucide-react'
+import { Camera, CircleCheck, Download, Hand, LayoutDashboard, Library, Maximize2, MessageCircle, Settings } from 'lucide-react'
 import {
   CommandDialog,
   CommandEmpty,
@@ -63,6 +63,12 @@ export default function CommandPalette({
           </CommandItem>
           <CommandItem onSelect={() => run(() => onNavigate('dashboard'))}>
             <LayoutDashboard /> Go to Dashboard
+          </CommandItem>
+          <CommandItem onSelect={() => run(() => onNavigate('assistant'))}>
+            <MessageCircle /> Go to Assistant
+          </CommandItem>
+          <CommandItem onSelect={() => run(() => onNavigate('print'))}>
+            <CircleCheck /> Go to Print check
           </CommandItem>
           <CommandItem onSelect={() => run(() => onNavigate('settings'))}>
             <Settings /> Open settings

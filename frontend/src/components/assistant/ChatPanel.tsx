@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { confirmAction, runAssistantTurn } from '@/lib/tulasiAssistant'
-import { onEvent, pushEvent, type TulasiEventType } from '@/lib/tulasiEvents'
+import { getRecentEvents, onEvent, pushEvent, type TulasiEvent, type TulasiEventType } from '@/lib/tulasiEvents'
+import { SectionHeader } from '../tulasi/Readout'
 import { cn } from '@/lib/utils'
 import { playSpokenText } from '@/lib/voicePlayback'
 import { getVoiceEnabled } from '@/lib/voicePreference'
@@ -81,16 +82,9 @@ function loadPanelSize(): { width: number; height: number } {
   }
 }
 
-export default function ChatPanel({ openSignal }: { openSignal?: number }) {
+export default function ChatPanel({ embedded }: { embedded?: boolean }) {
   const [open, setOpen] = useState(false)
-
-  // The nav's "assistant" item pings this (a changing nonce, same trigger
-  // pattern as RotationTrigger/PanTrigger) to open the real panel rather than
-  // duplicating its chat logic into a separate full-page screen.
-  useEffect(() => {
-    if (openSignal !== undefined) setOpen(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSignal])
+  const [recentEvents, setRecentEvents] = useState<TulasiEvent[]>(getRecentEvents)
   const [liveMode, setLiveMode] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
   const [pendingAction, setPendingAction] = useState<{ forMessageId: string; action: ProposedAction } | null>(null)
@@ -178,6 +172,12 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
     [scrollToBottom],
   )
 
+  // Real recent-activity feed for the embedded (full-page) layout — the
+  // actual event bus, not fabricated "recent ops" numbers.
+  useEffect(() => {
+    return onEvent((event) => setRecentEvents((prev) => [...prev, event].slice(-30)))
+  }, [])
+
   // Live mode: react to the event bus in real time instead of waiting for
   // the user to type. Scoped to this page by construction — the event bus
   // is in-memory React state with no cross-tab/cross-site visibility at all.
@@ -238,7 +238,7 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
     setPendingAction(null)
   }
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <>
         {liveMode && <div className="live-mode-frame" />}
@@ -260,20 +260,24 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
     )
   }
 
-  return (
-    <>
-    {liveMode && <div className="live-mode-frame" />}
+  const chatCard = (
     <Card
-      className="liquid-glass fixed right-6 bottom-6 z-20 flex flex-col gap-0 overflow-hidden p-0"
-      style={{ width: panelSize.width, height: panelSize.height }}
+      className={
+        embedded
+          ? 'liquid-glass relative flex h-[min(720px,calc(100vh-260px))] w-full flex-col gap-0 overflow-hidden p-0'
+          : 'liquid-glass fixed right-6 bottom-6 z-20 flex flex-col gap-0 overflow-hidden p-0'
+      }
+      style={embedded ? undefined : { width: panelSize.width, height: panelSize.height }}
     >
-      <div
-        onPointerDown={startResize}
-        className="absolute top-0 left-0 z-10 size-4 cursor-nwse-resize touch-none"
-        aria-hidden="true"
-      >
-        <div className="absolute top-1.5 left-1.5 size-2 rounded-full border-t border-l border-muted-foreground/50" />
-      </div>
+      {!embedded && (
+        <div
+          onPointerDown={startResize}
+          className="absolute top-0 left-0 z-10 size-4 cursor-nwse-resize touch-none"
+          aria-hidden="true"
+        >
+          <div className="absolute top-1.5 left-1.5 size-2 rounded-full border-t border-l border-muted-foreground/50" />
+        </div>
+      )}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="font-display text-xs tracking-[0.1em] text-primary uppercase">Tulasi assistant</p>
@@ -284,6 +288,7 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
             </span>
           )}
         </div>
+        {!embedded && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -297,6 +302,7 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
           </TooltipTrigger>
           <TooltipContent>Close</TooltipContent>
         </Tooltip>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
@@ -355,6 +361,55 @@ export default function ChatPanel({ openSignal }: { openSignal?: number }) {
         </Button>
       </div>
     </Card>
+  )
+
+  if (embedded) {
+    return (
+      <div className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
+        {liveMode && <div className="live-mode-frame" />}
+        <SectionHeader
+          code="03 · assistant"
+          title={
+            <>
+              Speak in intent. <span className="italic text-muted-foreground">It edits the geometry.</span>
+            </>
+          }
+          hint="Every change goes through the same whitelisted commands as gesture control — reversible actions run instantly, others wait for your confirm."
+        />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
+          {chatCard}
+          <div className="clay h-fit">
+            <div className="border-b border-border px-4 py-3 font-mono text-[10px] tracking-[0.3em] text-muted-foreground uppercase">
+              recent activity
+            </div>
+            {recentEvents.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-muted-foreground">Nothing yet this session.</p>
+            ) : (
+              <ul className="max-h-[500px] overflow-y-auto">
+                {[...recentEvents]
+                  .reverse()
+                  .map((event, i) => (
+                    <li key={`${event.at}-${i}`} className="border-b border-border/50 px-4 py-2.5 last:border-0">
+                      <div className="font-mono text-[10px] tracking-[0.15em] text-teal uppercase">
+                        {event.type.replace(/_/g, ' ')}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[9px] text-muted-foreground">
+                        {new Date(event.at).toLocaleTimeString()}
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {liveMode && <div className="live-mode-frame" />}
+      {chatCard}
     </>
   )
 }

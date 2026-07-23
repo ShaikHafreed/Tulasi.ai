@@ -1,6 +1,7 @@
 import { sendAssistantMessage } from './api'
 import { getRecentEvents } from './tulasiEvents'
 import { executeCommand, isCommandAvailable } from './tulasiCommands'
+import { getAutoApplyReversible } from './assistantPreference'
 import type { ProposedAction, Source } from './types'
 
 export interface AssistantTurnResult {
@@ -18,9 +19,10 @@ export async function runAssistantTurn(message: string): Promise<AssistantTurnRe
   const executed: { action: ProposedAction; result: unknown }[] = []
   const pendingConfirm: ProposedAction[] = []
 
+  const autoApply = getAutoApplyReversible()
   for (const action of reply.proposed_actions) {
     if (!isCommandAvailable(action.action)) continue
-    if (action.reversible) {
+    if (action.reversible && autoApply) {
       const result = executeCommand(action.action, action.params)
       executed.push({ action, result })
     } else {

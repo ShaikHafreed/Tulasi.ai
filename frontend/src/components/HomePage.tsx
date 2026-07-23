@@ -37,6 +37,7 @@ import { pushEvent } from '../lib/tulasiEvents'
 import { clearCommandHandlers, executeCommand, isCommandAvailable, registerCommandHandlers } from '../lib/tulasiCommands'
 import type { PrintCheckResult } from '../lib/tulasiCommands'
 import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
+import { getAutoApplyReversible, setAutoApplyReversible } from '../lib/assistantPreference'
 import {
   getGloveGestureEnabled,
   getWebcamGestureEnabled,
@@ -44,7 +45,7 @@ import {
   setWebcamGestureEnabled,
 } from '../lib/gesturePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
-import { printCheck } from '../lib/printCheck'
+import { MAX_ASPECT_FOR_STABILITY, MIN_PRINTABLE_MM, printCheck } from '../lib/printCheck'
 
 const POLL_INTERVAL_MS = 1500
 
@@ -973,7 +974,10 @@ function SettingsPanel({ code, title, children }: { code: string; title: string;
 
 // Standalone print-readiness report — runs the same real printCheck()
 // heuristics the New-scan flow and the assistant's runPrintCheck command
-// use, against any of your real measured scans, not a mock/preview number.
+// use, against any of your real measured scans. Two real checks, not the
+// six-row mockup Lovable ships (that table is hardcoded fake numbers with
+// Apply/Switch-material/Report-PDF buttons wired to nothing) — ported the
+// layout, not the fabricated data, per this project's no-fake-data rule.
 function PrintCheckView({
   scans,
   loading,
@@ -984,25 +988,85 @@ function PrintCheckView({
   onGoToScan: () => void
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [exportBusy, setExportBusy] = useState<'stl' | 'glb' | null>(null)
   const [unit] = useUnit()
 
   const measured = scans.filter((s) => s.width_mm && s.height_mm && s.depth_mm)
   const selected = measured.find((s) => s.id === selectedId) ?? measured[0] ?? null
-  const result =
+  const dims =
     selected && selected.width_mm && selected.height_mm && selected.depth_mm
-      ? printCheck({ width_mm: selected.width_mm, height_mm: selected.height_mm, depth_mm: selected.depth_mm })
+      ? { width_mm: selected.width_mm, height_mm: selected.height_mm, depth_mm: selected.depth_mm }
       : null
+  const result = dims ? printCheck(dims) : null
+
+  const checks = dims
+    ? (() => {
+        const smallest = Math.min(dims.width_mm, dims.height_mm, dims.depth_mm)
+        const largest = Math.max(dims.width_mm, dims.height_mm, dims.depth_mm)
+        const aspect = largest / Math.max(smallest, 0.1)
+        return [
+          {
+            code: 'chk.01',
+            label: 'min feature thickness',
+            value: smallest.toFixed(1),
+            unit: 'mm',
+            passed: smallest >= MIN_PRINTABLE_MM,
+            note:
+              smallest >= MIN_PRINTABLE_MM
+                ? `above the ${MIN_PRINTABLE_MM}mm floor for FDM`
+                : `below ${MIN_PRINTABLE_MM}mm — thin features like this often fail`,
+          },
+          {
+            code: 'chk.02',
+            label: 'base-to-height stability',
+            value: aspect.toFixed(1),
+            unit: '×',
+            passed: aspect <= MAX_ASPECT_FOR_STABILITY,
+            note:
+              aspect <= MAX_ASPECT_FOR_STABILITY
+                ? `within ${MAX_ASPECT_FOR_STABILITY}× of its base — stable`
+                : `over ${MAX_ASPECT_FOR_STABILITY}× tall for its base — may need a brim/raft`,
+          },
+        ]
+      })()
+    : []
+  const passedCount = checks.filter((c) => c.passed).length
+
+  async function handleExport(format: 'stl' | 'glb') {
+    if (!selected || !dims || exportBusy) return
+    setExportBusy(format)
+    try {
+      await exportScan(selected.job_id, format, dims)
+      toast.success(`Exported ${format.toUpperCase()}`)
+    } catch {
+      toast.error('Export failed — try again.')
+    } finally {
+      setExportBusy(null)
+    }
+  }
 
   return (
     <>
       <SectionHeader
         code="05 · print check"
         title={
-          <>
-            Will it <span className="italic text-muted-foreground">actually print?</span>
-          </>
+          result ? (
+            result.passed ? (
+              <>
+                Ready to <span className="text-teal">print.</span>
+              </>
+            ) : (
+              <>
+                Needs a <span className="text-coral">fix.</span>
+              </>
+            )
+          ) : (
+            <>
+              Will it <span className="italic text-muted-foreground">actually print?</span>
+            </>
+          )
         }
-        hint="Checks your scan's measured W/H/D against two FDM printability rules (minimum feature thickness, base-to-height stability) — a dimension check, not a full mesh analysis of walls or overhangs."
+        hint="Your scan's measured W/H/D against two real FDM rules — minimum feature thickness and base-to-height stability. A dimension check, not a full mesh analysis of walls or overhangs."
       />
 
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -1048,37 +1112,89 @@ function PrintCheckView({
             ))}
           </div>
 
-          <div className="clay corner-ticks p-6">
-            <div className="flex items-center gap-2">
-              <span className={`inline-block h-2 w-2 rounded-full ${result.passed ? 'bg-teal' : 'bg-coral'}`} />
-              <span className={`font-mono text-[11px] tracking-[0.25em] uppercase ${result.passed ? 'text-teal' : 'text-coral'}`}>
-                {result.passed ? 'print check passed' : 'print check flagged'}
-              </span>
+          <div className="flex flex-col gap-6">
+            <div className="clay corner-ticks grid grid-cols-[auto_1fr] gap-6 p-6">
+              <div className="flex size-28 items-center justify-center overflow-hidden rounded-xl bg-navy-deep/60">
+                {selected.image_url ? (
+                  <img src={selected.image_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">No preview</span>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center justify-between font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">
+                  <span className="truncate">{selected.object_name ?? selected.job_id}</span>
+                  <span className={result.passed ? 'text-teal' : 'text-coral'}>overall · {result.passed ? 'ready' : 'review'}</span>
+                </div>
+                <div className="mt-3 flex items-baseline gap-6">
+                  <div>
+                    <div className="font-mono text-3xl text-teal">{passedCount}</div>
+                    <div className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">passed</div>
+                  </div>
+                  <div>
+                    <div className={`font-mono text-3xl ${checks.length - passedCount > 0 ? 'text-coral' : 'text-teal'}`}>
+                      {checks.length - passedCount}
+                    </div>
+                    <div className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">warnings</div>
+                  </div>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden bg-muted">
+                  <div className="h-full bg-teal" style={{ width: `${(passedCount / checks.length) * 100}%` }} />
+                </div>
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={exportBusy !== null}
+                    onClick={() => handleExport('stl')}
+                    className="border border-teal/60 px-3 py-1.5 font-mono text-[9px] tracking-[0.25em] text-teal uppercase transition-colors hover:bg-teal hover:text-navy-deep disabled:opacity-50"
+                  >
+                    {exportBusy === 'stl' ? 'exporting…' : 'export · stl'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exportBusy !== null}
+                    onClick={() => handleExport('glb')}
+                    className="border border-border px-3 py-1.5 font-mono text-[9px] tracking-[0.25em] text-muted-foreground uppercase transition-colors hover:text-foreground disabled:opacity-50"
+                  >
+                    {exportBusy === 'glb' ? 'exporting…' : 'export · glb'}
+                  </button>
+                </div>
+              </div>
             </div>
-            <h3 className="mt-2 font-display text-xl">{selected.object_name ?? selected.job_id}</h3>
 
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              <Readout label="w" value={toDisplayValue(selected.width_mm!, unit)} unit={unitLabel(unit)} />
-              <Readout label="h" value={toDisplayValue(selected.height_mm!, unit)} unit={unitLabel(unit)} />
-              <Readout
-                label="d"
-                value={toDisplayValue(selected.depth_mm!, unit)}
-                unit={unitLabel(unit)}
-                tone={selected.depth_estimated ? 'coral' : 'teal'}
-              />
-            </div>
-
-            {result.warnings.length > 0 ? (
-              <ul className="mt-4 flex flex-col gap-2">
-                {result.warnings.map((warning) => (
-                  <li key={warning} className="border border-coral/30 bg-coral/5 px-3 py-2 text-sm text-foreground">
-                    {warning}
+            <div className="clay">
+              <div className="border-b border-border px-5 py-3 font-mono text-[10px] tracking-[0.3em] text-muted-foreground uppercase">
+                checks
+              </div>
+              <ul>
+                {checks.map((c) => (
+                  <li
+                    key={c.code}
+                    className="grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-6 border-b border-border/50 px-5 py-4 last:border-0"
+                  >
+                    <span
+                      className={`inline-flex h-6 w-6 items-center justify-center border font-mono text-[10px] ${
+                        c.passed ? 'border-teal text-teal' : 'border-coral text-coral'
+                      }`}
+                    >
+                      {c.passed ? '✓' : '!'}
+                    </span>
+                    <span className="w-16 font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">{c.code}</span>
+                    <div>
+                      <div className="text-sm">{c.label}</div>
+                      <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{c.note}</div>
+                    </div>
+                    <div className="font-mono text-sm">
+                      <span className={c.passed ? 'text-teal' : 'text-coral'}>{c.value}</span>
+                      <span className="ml-1 text-[10px] text-muted-foreground">{c.unit}</span>
+                    </div>
+                    <span className={`font-mono text-[9px] tracking-[0.3em] uppercase ${c.passed ? 'text-teal' : 'text-coral'}`}>
+                      {c.passed ? 'pass' : 'warning'}
+                    </span>
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">No issues at these dimensions.</p>
-            )}
+            </div>
           </div>
         </div>
       )}
@@ -1098,6 +1214,7 @@ function SettingsView({
   onSelectGestureMode: (mode: GestureMode) => void
 }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
+  const [autoApply, setAutoApplyState] = useState(getAutoApplyReversible())
   const [unit, setUnit] = useUnit()
   const email = session.user.email ?? ''
   const provider = session.user.app_metadata?.provider ?? 'email'
@@ -1108,10 +1225,17 @@ function SettingsView({
     { mode: 'glove', title: 'Glove · 6-dof', hint: 'pair via bluetooth · beta', accent: 'text-coral' },
   ]
 
+  const SECTIONS = [
+    { id: 'account', code: '01', label: 'account' },
+    { id: 'gesture', code: '02', label: 'input · gesture' },
+    { id: 'workspace', code: '03', label: 'workspace' },
+    { id: 'danger', code: '04', label: 'danger' },
+  ]
+
   return (
     <>
       <SectionHeader
-        code="04 · settings"
+        code="06 · settings"
         title={
           <>
             Your workbench, <span className="italic text-muted-foreground">calibrated.</span>
@@ -1120,84 +1244,132 @@ function SettingsView({
         hint="Every preference is a measurement. Change one and the workspace re-fits."
       />
 
-      <div className="grid grid-cols-1 gap-6">
-        <SettingsPanel code="01" title="account">
-          <div className="flex items-center gap-6">
-            <div className="clay flex h-16 w-16 items-center justify-center font-display text-2xl text-teal">
-              {email.slice(0, 1).toUpperCase() || 'T'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm">{email}</div>
-              <div className="mt-1 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
-                signed in via {provider}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="flex h-9 shrink-0 items-center border border-border px-4 font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase hover:border-coral/50 hover:text-coral"
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[200px_1fr]">
+        <nav className="clay flex h-fit flex-row gap-1 overflow-x-auto p-2 lg:flex-col lg:overflow-visible">
+          {SECTIONS.map((s) => (
+            <a
+              key={s.id}
+              href={`#settings-${s.id}`}
+              className="flex shrink-0 items-center gap-2 px-3 py-2 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase transition-colors hover:bg-teal/5 hover:text-foreground"
             >
-              sign out
-            </button>
-          </div>
-        </SettingsPanel>
+              <span className="opacity-40">{s.code}</span>
+              {s.label}
+            </a>
+          ))}
+        </nav>
 
-        <SettingsPanel code="02" title="input · gesture">
-          <p className="mb-4 max-w-md text-xs text-muted-foreground">
-            Rotate, pan, and resize your model with your hand. Webcam needs no calibration; the ESP32 glove pairs over
-            Bluetooth for six-degree precision. Both need Chrome or Edge.
-          </p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {GESTURE_CARDS.map((card) => {
-              const active = gestureMode === card.mode
-              return (
+        <div className="flex flex-col gap-6">
+          <div id="settings-account">
+            <SettingsPanel code="01" title="account">
+              <div className="flex items-center gap-6">
+                <div className="clay flex h-16 w-16 items-center justify-center font-display text-2xl text-teal">
+                  {email.slice(0, 1).toUpperCase() || 'T'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm">{email}</div>
+                  <div className="mt-1 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+                    signed in via {provider}
+                  </div>
+                </div>
+              </div>
+            </SettingsPanel>
+          </div>
+
+          <div id="settings-gesture">
+            <SettingsPanel code="02" title="input · gesture">
+              <p className="mb-4 max-w-md text-xs text-muted-foreground">
+                Rotate, pan, and resize your model with your hand. Webcam needs no calibration; the ESP32 glove pairs
+                over Bluetooth for six-degree precision. Both need Chrome or Edge.
+              </p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {GESTURE_CARDS.map((card) => {
+                  const active = gestureMode === card.mode
+                  return (
+                    <button
+                      key={card.mode}
+                      type="button"
+                      onClick={() => onSelectGestureMode(card.mode)}
+                      className={`border p-4 text-left transition-colors ${
+                        active
+                          ? card.mode === 'glove'
+                            ? 'border-coral bg-coral/5'
+                            : 'border-teal bg-teal/5'
+                          : 'border-border hover:border-teal/50'
+                      }`}
+                    >
+                      <div className={`font-mono text-[9px] tracking-[0.3em] uppercase ${card.accent}`}>{card.mode}</div>
+                      <div className="mt-2 text-sm">{card.title}</div>
+                      <div className="mt-1 font-mono text-[10px] text-muted-foreground">{card.hint}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </SettingsPanel>
+          </div>
+
+          <div id="settings-workspace">
+            <SettingsPanel code="03" title="workspace">
+              <div className="flex items-center justify-between border-b border-border/50 pb-4">
+                <div className="max-w-md">
+                  <div className="text-sm">Measurement units</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Display in millimetres or inches — stored internally in mm either way.
+                  </p>
+                </div>
+                <UnitToggle unit={unit} onChange={setUnit} />
+              </div>
+              <div className="flex items-center justify-between border-b border-border/50 py-4">
+                <div className="max-w-md">
+                  <div className="text-sm">Assistant voice replies</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Spoken in Hafreed's cloned voice. Off by default — captions always show either way.
+                  </p>
+                </div>
+                <Switch
+                  checked={voiceEnabled}
+                  onCheckedChange={(next) => {
+                    setVoiceEnabledState(next)
+                    setVoiceEnabled(next)
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-4">
+                <div className="max-w-md">
+                  <div className="text-sm">Auto-apply reversible edits</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Resize, rotate, and pan actions the assistant proposes run instantly. Turn off to confirm every
+                    action, even reversible ones.
+                  </p>
+                </div>
+                <Switch
+                  checked={autoApply}
+                  onCheckedChange={(next) => {
+                    setAutoApplyState(next)
+                    setAutoApplyReversible(next)
+                  }}
+                />
+              </div>
+            </SettingsPanel>
+          </div>
+
+          <div id="settings-danger">
+            <SettingsPanel code="04" title="danger">
+              <div className="flex items-center justify-between border border-coral/30 bg-coral/5 p-4">
+                <div className="max-w-md">
+                  <div className="text-sm">Sign out of this workspace</div>
+                  <p className="mt-1 text-xs text-muted-foreground">You'll need to sign in again to reach your objects.</p>
+                </div>
                 <button
-                  key={card.mode}
                   type="button"
-                  onClick={() => onSelectGestureMode(card.mode)}
-                  className={`border p-4 text-left transition-colors ${
-                    active
-                      ? card.mode === 'glove'
-                        ? 'border-coral bg-coral/5'
-                        : 'border-teal bg-teal/5'
-                      : 'border-border hover:border-teal/50'
-                  }`}
+                  onClick={onSignOut}
+                  className="flex h-9 shrink-0 items-center border border-coral/50 px-4 font-mono text-[10px] tracking-[0.25em] text-coral uppercase hover:bg-coral hover:text-primary-foreground"
                 >
-                  <div className={`font-mono text-[9px] tracking-[0.3em] uppercase ${card.accent}`}>{card.mode}</div>
-                  <div className="mt-2 text-sm">{card.title}</div>
-                  <div className="mt-1 font-mono text-[10px] text-muted-foreground">{card.hint}</div>
+                  sign out
                 </button>
-              )
-            })}
+              </div>
+            </SettingsPanel>
           </div>
-        </SettingsPanel>
-
-        <SettingsPanel code="03" title="workspace">
-          <div className="flex items-center justify-between border-b border-border/50 pb-4">
-            <div className="max-w-md">
-              <div className="text-sm">Measurement units</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Display in millimetres or inches — stored internally in mm either way.
-              </p>
-            </div>
-            <UnitToggle unit={unit} onChange={setUnit} />
-          </div>
-          <div className="flex items-center justify-between pt-4">
-            <div className="max-w-md">
-              <div className="text-sm">Assistant voice replies</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Spoken in Hafreed's cloned voice. Off by default — captions always show either way.
-              </p>
-            </div>
-            <Switch
-              checked={voiceEnabled}
-              onCheckedChange={(next) => {
-                setVoiceEnabledState(next)
-                setVoiceEnabled(next)
-              }}
-            />
-          </div>
-        </SettingsPanel>
+        </div>
       </div>
     </>
   )
@@ -1212,9 +1384,6 @@ export default function HomePage({ session }: { session: Session }) {
   // mount would miss a toggle flipped from Settings without a remount.
   const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
   const [gloveEnabled, setGloveEnabled] = useState(getGloveGestureEnabled())
-  // Nonce the nav's "assistant" item bumps to open the real floating
-  // ChatPanel — see the comment on Sidebar's NAV_ITEMS_AFTER_ASSISTANT.
-  const [assistantOpenSignal, setAssistantOpenSignal] = useState(0)
 
   // Dark-first, matching the ported design — ensure no stale light class.
   useEffect(() => {
@@ -1289,7 +1458,6 @@ export default function HomePage({ session }: { session: Session }) {
         gestureMode={gestureMode}
         onSelectGestureMode={selectGestureMode}
         onPresent={present}
-        onOpenAssistant={() => setAssistantOpenSignal((n) => n + 1)}
       />
       <main className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
         {/* Every view stays mounted once visited — only hidden via CSS, never
@@ -1324,7 +1492,7 @@ export default function HomePage({ session }: { session: Session }) {
           />
         </div>
       </main>
-      <ChatPanel openSignal={assistantOpenSignal} />
+      <ChatPanel embedded={view === 'assistant'} />
       <CommandPalette onNavigate={setView} onToggleGesture={toggleGesture} gestureEnabled={gestureEnabled} />
     </div>
   )
