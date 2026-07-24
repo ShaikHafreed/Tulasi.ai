@@ -70,3 +70,15 @@ build log and roadmap.
   clipped — all root-caused and fixed, not guessed at. Also deleted a
   fake "print-ready mesh validation" stub that promised wall-thickness and
   overhang checks it never actually ran.
+- **Day 16**: STL exports are now slicer-ready — rotated into the print-bed
+  orientation and dropped flat-base-down, verified with real mesh math, not
+  eyeballed. Added a print cost/weight estimator using the model's actual
+  volume (not a bounding-box guess) times material density. Did a mobile
+  pass on the scan flow, including a real fix: the crop tool's resize
+  handle was 16px, way too small to grab with a finger, now a proper touch
+  target. Then found and fixed a real accessibility bug in yesterday's
+  palette: the terracotta and sage text colors failed WCAG contrast
+  (3.36:1 and 2.85:1 against a 4.5:1 minimum) — checked with the actual
+  contrast formula, not a guess, and corrected at the token source so every
+  screen picked it up at once. Shipped a real mobile bottom nav and
+  restyled the command palette and onboarding checklist to match.
