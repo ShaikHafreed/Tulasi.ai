@@ -127,7 +127,7 @@ export function SketchToModelHero({ onRequestAccess }: { onRequestAccess: () => 
                   top: scanTop,
                   opacity: scanOpacity,
                   background: 'linear-gradient(to right, transparent, var(--color-teal), transparent)',
-                  boxShadow: '0 0 24px 4px rgba(201,111,74,0.35), 0 0 60px 12px rgba(201,111,74,0.18)',
+                  boxShadow: '0 0 24px 4px rgba(179,79,42,0.35), 0 0 60px 12px rgba(179,79,42,0.18)',
                 }}
               />
             )}

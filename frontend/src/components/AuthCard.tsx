@@ -101,7 +101,7 @@ export default function AuthCard({
   return (
     <Dialog open={initialMode !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[800px] sm:flex-row">
-        <div className="relative flex h-45 shrink-0 flex-col items-center justify-center gap-2.5 overflow-hidden bg-[linear-gradient(rgba(201,111,74,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(201,111,74,0.1)_1px,transparent_1px),linear-gradient(135deg,rgba(201,111,74,0.12),rgba(196,98,46,0.08))] bg-[length:28px_28px,28px_28px,100%_100%] sm:h-auto sm:w-[42%]">
+        <div className="relative flex h-45 shrink-0 flex-col items-center justify-center gap-2.5 overflow-hidden bg-[linear-gradient(rgba(179,79,42,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(179,79,42,0.1)_1px,transparent_1px),linear-gradient(135deg,rgba(179,79,42,0.12),rgba(169,56,0,0.08))] bg-[length:28px_28px,28px_28px,100%_100%] sm:h-auto sm:w-[42%]">
           <div className="flex items-center gap-2 font-display text-xl">
             <span className="size-1.5 rounded-full bg-brand-coral" />
             TULASI.AI

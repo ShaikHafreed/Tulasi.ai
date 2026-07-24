@@ -1539,7 +1539,7 @@ export default function HomePage({ session }: { session: Session }) {
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            'radial-gradient(1200px 600px at 20% -10%, rgba(201,111,74,0.06), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(122,155,142,0.06), transparent 60%)',
+            'radial-gradient(1200px 600px at 20% -10%, rgba(179,79,42,0.06), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(71,109,92,0.06), transparent 60%)',
         }}
       />
       <Sidebar
