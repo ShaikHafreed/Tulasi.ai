@@ -1,5 +1,4 @@
-import { Check, Circle, X } from 'lucide-react'
-import { Card } from '@/components/ui/card'
+import { Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { dismissOnboarding, useOnboarding } from '@/lib/onboarding'
 
@@ -23,45 +22,72 @@ export default function OnboardingChecklist({
     { done: exported, label: 'Export a model', hint: 'Download an STL from a finished scan.' },
   ]
   const doneCount = items.filter((item) => item.done).length
+  const pct = Math.round((doneCount / items.length) * 100)
 
   return (
-    <Card className="mb-6 gap-3 p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">Getting started</p>
-          <span className="font-mono text-[11px] text-muted-foreground">{doneCount}/3</span>
+    <div className="clay corner-ticks mb-6 p-5 md:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">00 · getting started</div>
+          <h2 className="mt-1.5 font-display text-xl leading-tight md:text-2xl">
+            Three small moves, <span className="italic text-muted-foreground">then you're calibrated.</span>
+          </h2>
         </div>
-        <button
-          type="button"
-          onClick={dismissOnboarding}
-          className="text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Dismiss checklist"
-        >
-          <X size={15} />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">
+            {doneCount}/{items.length}
+          </span>
+          <button
+            type="button"
+            onClick={dismissOnboarding}
+            className="text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Dismiss checklist"
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
 
-      <ul className="flex flex-col gap-2">
-        {items.map((item) => (
-          <li key={item.label} className="flex items-start gap-2.5">
-            {item.done ? (
-              <Check size={16} className="mt-0.5 shrink-0 text-primary" />
-            ) : (
-              <Circle size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-            )}
-            <div>
-              <p className={item.done ? 'text-sm text-muted-foreground line-through' : 'text-sm'}>{item.label}</p>
-              {!item.done && <p className="text-xs text-muted-foreground">{item.hint}</p>}
+      <div className="relative mt-4 h-1 overflow-hidden rounded-full bg-muted">
+        <div className="absolute inset-y-0 left-0 rounded-full bg-sage transition-[width] duration-500" style={{ width: `${pct}%` }} />
+      </div>
+
+      <ul className="mt-5 grid gap-2 sm:grid-cols-3">
+        {items.map((item, i) => (
+          <li
+            key={item.label}
+            className={`rounded-2xl border p-4 transition-colors ${
+              item.done ? 'border-sage/30 bg-sage/[0.06]' : 'border-border bg-background/60'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                aria-hidden
+                className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                  item.done ? 'border-sage bg-sage text-primary-foreground' : 'border-border bg-background text-muted-foreground'
+                }`}
+              >
+                {item.done && <Check size={12} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">0{i + 1}</span>
+                  <h3 className={`text-sm font-medium ${item.done ? 'text-muted-foreground line-through decoration-sage/60' : ''}`}>
+                    {item.label}
+                  </h3>
+                </div>
+                {!item.done && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.hint}</p>}
+              </div>
             </div>
           </li>
         ))}
       </ul>
 
       {!uploaded && (
-        <Button variant="warm" size="sm" className="mt-1 w-fit" onClick={onGoToScan}>
+        <Button variant="warm" size="sm" className="mt-4 w-fit" onClick={onGoToScan}>
           Upload a photo
         </Button>
       )}
-    </Card>
+    </div>
   )
 }

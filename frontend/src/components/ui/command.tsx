@@ -23,6 +23,11 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent showCloseButton={false} className="top-[18%] max-w-[560px] translate-y-0 overflow-hidden p-0">
         <DialogTitle className="sr-only">{title}</DialogTitle>
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1 font-mono text-[10px] tracking-[0.3em] text-teal uppercase">
+          <span className="caret-blink inline-block h-1.5 w-1.5 rounded-full bg-teal" />
+          command · tulasi
+          <span className="ml-auto font-mono text-[10px] tracking-[0.2em] text-muted-foreground">esc to close</span>
+        </div>
         <Command className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-display [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:tracking-[0.16em] [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:uppercase">
           {children}
         </Command>

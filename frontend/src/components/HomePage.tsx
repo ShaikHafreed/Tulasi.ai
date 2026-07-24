@@ -1549,7 +1549,7 @@ export default function HomePage({ session }: { session: Session }) {
         onSelectGestureMode={selectGestureMode}
         onPresent={present}
       />
-      <main className="mx-auto max-w-[1120px] px-4 pt-20 pb-12 sm:px-8">
+      <main className="mx-auto max-w-[1120px] px-4 pt-20 pb-20 sm:px-8 md:pb-12">
         {/* Every view stays mounted once visited — only hidden via CSS, never
             unmounted — so switching tabs (e.g. to Settings) doesn't kill
             ScanView's in-flight upload polling. That used to be a real bug:

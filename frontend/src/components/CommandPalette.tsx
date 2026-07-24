@@ -50,9 +50,14 @@ export default function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Type a command or search…" />
+      <CommandInput placeholder="Search — jump to a page, run an action…" />
       <CommandList>
-        <CommandEmpty>No matching command.</CommandEmpty>
+        <CommandEmpty>
+          <div className="py-6 text-center">
+            <div className="font-display text-lg">Nothing matches.</div>
+            <div className="mt-1 text-xs text-muted-foreground">Try "scan", "library", or "export".</div>
+          </div>
+        </CommandEmpty>
 
         <CommandGroup heading="Navigate">
           <CommandItem onSelect={() => run(() => onNavigate('scan'))}>

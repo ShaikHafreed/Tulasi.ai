@@ -247,7 +247,7 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
             <Button
               variant="warm"
               size="icon"
-              className="fixed right-6 bottom-6 z-20 size-12 rounded-full"
+              className="fixed right-4 bottom-20 z-20 size-12 rounded-full sm:right-6 md:bottom-6"
               onClick={() => setOpen(true)}
               aria-label="Open Tulasi assistant"
             >
@@ -265,7 +265,7 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
       className={
         embedded
           ? 'liquid-glass relative flex h-[min(720px,calc(100vh-260px))] w-full flex-col gap-0 overflow-hidden p-0'
-          : 'liquid-glass fixed right-6 bottom-6 z-20 flex flex-col gap-0 overflow-hidden p-0'
+          : 'liquid-glass fixed right-4 bottom-20 z-20 flex flex-col gap-0 overflow-hidden p-0 sm:right-6 md:bottom-6'
       }
       style={embedded ? undefined : { width: panelSize.width, height: panelSize.height }}
     >
@@ -365,7 +365,7 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
 
   if (embedded) {
     return (
-      <div className="mx-auto max-w-[1120px] px-4 pt-20 pb-12 sm:px-8">
+      <div className="mx-auto max-w-[1120px] px-4 pt-20 pb-20 sm:px-8 md:pb-12">
         {liveMode && <div className="live-mode-frame" />}
         <SectionHeader
           code="03 · assistant"
