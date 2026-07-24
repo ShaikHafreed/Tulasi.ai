@@ -50,6 +50,7 @@ import { clearCommandHandlers, executeCommand, isCommandAvailable, registerComma
 import type { PrintCheckResult } from '../lib/tulasiCommands'
 import { getVoiceEnabled, setVoiceEnabled } from '../lib/voicePreference'
 import { getAutoApplyReversible, setAutoApplyReversible } from '../lib/assistantPreference'
+import { useIsMobile } from '../lib/useIsMobile'
 import {
   getGloveGestureEnabled,
   getWebcamGestureEnabled,
@@ -635,6 +636,7 @@ function ScanView({
   gestureEnabled: boolean
   gloveEnabled: boolean
 }) {
+  const isMobile = useIsMobile()
   const [phase, setPhase] = useState<'idle' | 'selecting' | 'uploading' | 'job' | 'done'>('idle')
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -931,7 +933,7 @@ function ScanView({
             onSnapshot={handleSnapshot}
           />
 
-          {gestureEnabled && (
+          {gestureEnabled && !isMobile && (
             <WebcamGesturePanel enabled={gestureEnabled} getDimensions={() => liveDimsRef.current} />
           )}
           {gloveEnabled && (
@@ -1547,7 +1549,7 @@ export default function HomePage({ session }: { session: Session }) {
         onSelectGestureMode={selectGestureMode}
         onPresent={present}
       />
-      <main className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
+      <main className="mx-auto max-w-[1120px] px-4 pt-20 pb-12 sm:px-8">
         {/* Every view stays mounted once visited — only hidden via CSS, never
             unmounted — so switching tabs (e.g. to Settings) doesn't kill
             ScanView's in-flight upload polling. That used to be a real bug:

@@ -365,7 +365,7 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
 
   if (embedded) {
     return (
-      <div className="mx-auto max-w-[1120px] px-8 pt-20 pb-12">
+      <div className="mx-auto max-w-[1120px] px-4 pt-20 pb-12 sm:px-8">
         {liveMode && <div className="live-mode-frame" />}
         <SectionHeader
           code="03 · assistant"

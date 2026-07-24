@@ -80,10 +80,15 @@ export default function SubjectCropper({
         onPointerDown={(event) => begin(event, 'move')}
       >
         <div
-          className="absolute -bottom-2 -right-2 size-4 rounded-full border-2 border-primary bg-background"
+          // The visible dot stays small (size-4); the invisible flex parent
+          // is a real ~44px touch target around it — a 16px circle is too
+          // small to reliably grab with a finger.
+          className="absolute -bottom-4 -right-4 flex size-11 items-center justify-center"
           style={{ cursor: 'nwse-resize' }}
           onPointerDown={(event) => begin(event, 'resize')}
-        />
+        >
+          <div className="pointer-events-none size-4 rounded-full border-2 border-primary bg-background" />
+        </div>
       </div>
 
       {label && (

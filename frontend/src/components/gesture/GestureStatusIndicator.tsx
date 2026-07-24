@@ -1,4 +1,5 @@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useIsMobile } from '@/lib/useIsMobile'
 
 // Ported from the Lovable design, wired to REAL gesture state. off /
 // webcam-active / glove-linked reflect the actual persisted toggles, and
@@ -26,6 +27,7 @@ export default function GestureStatusIndicator({
   onSelect: (mode: GestureMode) => void
 }) {
   const meta = LABELS[mode]
+  const isMobile = useIsMobile()
 
   return (
     <DropdownMenu>
@@ -46,17 +48,29 @@ export default function GestureStatusIndicator({
         {(['off', 'webcam', 'glove'] as GestureMode[]).map((m) => {
           const active = m === mode
           const info = LABELS[m]
+          const disabled = m === 'webcam' && isMobile
           return (
-            <DropdownMenuItem key={m} onClick={() => onSelect(m)} className="flex-col items-stretch gap-0 py-2">
+            <DropdownMenuItem
+              key={m}
+              disabled={disabled}
+              onClick={() => !disabled && onSelect(m)}
+              className="flex-col items-stretch gap-0 py-2"
+            >
               <div className="flex w-full items-center gap-3">
-                <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${info.dot}`} />
+                <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${disabled ? 'bg-muted-foreground/30' : info.dot}`} />
                 <div className="flex-1">
-                  <div className={`font-mono text-[10px] tracking-[0.2em] uppercase ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  <div
+                    className={`font-mono text-[10px] tracking-[0.2em] uppercase ${
+                      disabled ? 'text-muted-foreground/50' : active ? 'text-foreground' : 'text-muted-foreground'
+                    }`}
+                  >
                     {info.label}
                   </div>
-                  <div className="mt-0.5 font-mono text-[9px] text-muted-foreground/70">{info.hint}</div>
+                  <div className="mt-0.5 font-mono text-[9px] text-muted-foreground/70">
+                    {disabled ? 'needs a larger screen' : info.hint}
+                  </div>
                 </div>
-                {active && <span className="text-xs text-teal">●</span>}
+                {active && !disabled && <span className="text-xs text-teal">●</span>}
               </div>
             </DropdownMenuItem>
           )
