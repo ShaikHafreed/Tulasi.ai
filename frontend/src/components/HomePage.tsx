@@ -30,7 +30,19 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
-import { ApiError, deleteScan, disableShare, enableShare, exportScan, getJobStatus, renameScan, uploadImages, uploadThumbnail } from '@/lib/api'
+import {
+  ApiError,
+  deleteScan,
+  disableShare,
+  enableShare,
+  estimateScan,
+  exportScan,
+  getJobStatus,
+  renameScan,
+  uploadImages,
+  uploadThumbnail,
+  type EstimateResult,
+} from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { supabase } from '../lib/supabase'
 import { pushEvent } from '../lib/tulasiEvents'
@@ -598,7 +610,8 @@ function ExportCard({ jobId, dims }: { jobId: string; dims: Dimensions | null })
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        STL drops into a slicer at real size. GLB keeps colour and materials for web use.
+        STL drops into a slicer at real size, oriented flat-base-down on the print bed. GLB keeps colour and materials
+        for web use.
       </p>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled={!dims || busy !== null} onClick={() => handleExport('stl')}>
@@ -989,6 +1002,10 @@ function PrintCheckView({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState<'stl' | 'glb' | null>(null)
+  const [material, setMaterial] = useState<'pla' | 'petg' | 'abs'>('pla')
+  const [pricePerGram, setPricePerGram] = useState(0.02)
+  const [estimate, setEstimate] = useState<EstimateResult | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
   const [unit] = useUnit()
 
   const measured = scans.filter((s) => s.width_mm && s.height_mm && s.depth_mm)
@@ -1031,6 +1048,23 @@ function PrintCheckView({
       })()
     : []
   const passedCount = checks.filter((c) => c.passed).length
+
+  useEffect(() => {
+    if (!selected || !dims) {
+      setEstimate(null)
+      return
+    }
+    let cancelled = false
+    setEstimateLoading(true)
+    estimateScan(selected.job_id, dims, material)
+      .then((result) => !cancelled && setEstimate(result))
+      .catch(() => !cancelled && setEstimate(null))
+      .finally(() => !cancelled && setEstimateLoading(false))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.job_id, dims?.width_mm, dims?.height_mm, dims?.depth_mm, material])
 
   async function handleExport(format: 'stl' | 'glb') {
     if (!selected || !dims || exportBusy) return
@@ -1146,6 +1180,7 @@ function PrintCheckView({
                     type="button"
                     disabled={exportBusy !== null}
                     onClick={() => handleExport('stl')}
+                    title="Oriented flat-base-down for slicing"
                     className="border border-teal/60 px-3 py-1.5 font-mono text-[9px] tracking-[0.25em] text-teal uppercase transition-colors hover:bg-teal hover:text-navy-deep disabled:opacity-50"
                   >
                     {exportBusy === 'stl' ? 'exporting…' : 'export · stl'}
@@ -1158,6 +1193,59 @@ function PrintCheckView({
                   >
                     {exportBusy === 'glb' ? 'exporting…' : 'export · glb'}
                   </button>
+                </div>
+
+                <div className="mt-5 border-t border-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[9px] tracking-[0.3em] text-muted-foreground uppercase">
+                      weight &amp; cost estimate
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={material}
+                        onChange={(e) => setMaterial(e.target.value as typeof material)}
+                        className="border border-border bg-transparent px-2 py-1 font-mono text-[9px] uppercase"
+                      >
+                        <option value="pla">PLA</option>
+                        <option value="petg">PETG</option>
+                        <option value="abs">ABS</option>
+                      </select>
+                      <label className="flex items-center gap-1 font-mono text-[9px] text-muted-foreground uppercase">
+                        $/g
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.001}
+                          value={pricePerGram}
+                          onChange={(e) => setPricePerGram(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-14 border border-border bg-transparent px-1.5 py-1 font-mono text-[9px]"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  {estimateLoading && <p className="mt-2 text-xs text-muted-foreground">Calculating from the real mesh…</p>}
+                  {!estimateLoading && estimate && (
+                    <div className="mt-2 flex items-baseline gap-6">
+                      <div>
+                        <div className="font-mono text-lg text-teal">{estimate.volume_cm3}</div>
+                        <div className="font-mono text-[9px] text-muted-foreground uppercase">cm³ volume</div>
+                      </div>
+                      <div>
+                        <div className="font-mono text-lg text-teal">{estimate.weight_g}g</div>
+                        <div className="font-mono text-[9px] text-muted-foreground uppercase">estimated weight</div>
+                      </div>
+                      <div>
+                        <div className="font-mono text-lg text-coral">${(estimate.weight_g * pricePerGram).toFixed(2)}</div>
+                        <div className="font-mono text-[9px] text-muted-foreground uppercase">est. material cost</div>
+                      </div>
+                    </div>
+                  )}
+                  {!estimateLoading && !estimate && (
+                    <p className="mt-2 text-xs text-muted-foreground">Couldn't calculate — the model file may be missing.</p>
+                  )}
+                  <p className="mt-2 text-[10px] text-muted-foreground">
+                    Real mesh volume × {material.toUpperCase()} density. An estimate, not a quote.
+                  </p>
                 </div>
               </div>
             </div>

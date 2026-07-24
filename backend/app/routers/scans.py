@@ -4,8 +4,8 @@ from fastapi import APIRouter, File, Header, Response, UploadFile
 
 from .. import supabase_client
 from ..errors import AppError
-from ..models.schemas import ExportRequest, RenameScanRequest
-from ..services import exporter
+from ..models.schemas import EstimateRequest, EstimateResponse, ExportRequest, RenameScanRequest
+from ..services import estimate, exporter
 from ..services.meshy import STORAGE_DIR
 from ..services.uploads import validate_content_type, validate_size
 
@@ -77,6 +77,14 @@ async def rename_scan(
             human_message="Couldn't rename that scan.",
             suggested_action="Try again in a moment.",
         )
+
+
+@router.post("/{job_id}/estimate", response_model=EstimateResponse)
+async def estimate_print(job_id: str, body: EstimateRequest) -> EstimateResponse:
+    # No auth: reads a local storage file, same as export — gating it would
+    # be inconsistent with that endpoint.
+    result = estimate.estimate_weight(job_id, body.width_mm, body.height_mm, body.depth_mm, body.material)
+    return EstimateResponse(**result)
 
 
 @router.post("/{job_id}/export")

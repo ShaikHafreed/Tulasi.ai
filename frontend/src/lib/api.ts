@@ -270,6 +270,31 @@ export interface ExportDimensions {
   depth_mm: number
 }
 
+export interface EstimateResult {
+  volume_cm3: number
+  weight_g: number
+  material: string
+  density_g_cm3: number
+}
+
+// Real mesh-volume weight estimate (trimesh divergence-theorem volume over
+// the actual scaled mesh, not a bounding-box guess). Cost is computed
+// client-side from weight_g * a user-editable price/gram, since that price
+// is a local preference, not something the backend needs to know.
+export async function estimateScan(
+  jobId: string,
+  dims: ExportDimensions,
+  material: string,
+): Promise<EstimateResult> {
+  const response = await fetch(`/api/scans/${jobId}/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...dims, material }),
+  })
+  if (!response.ok) await parseErrorOrThrow(response)
+  return response.json()
+}
+
 // Downloads the model scaled to its real millimeter dimensions. STL drops
 // straight into a slicer at the correct size; GLB keeps materials for web use.
 export async function exportScan(

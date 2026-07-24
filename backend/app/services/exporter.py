@@ -23,24 +23,9 @@ _FORMATS = {
 }
 
 
-def build_export(
-    job_id: str,
-    fmt: str,
-    width_mm: float | None,
-    height_mm: float | None,
-    depth_mm: float | None,
-) -> tuple[bytes, str, str]:
-    """Returns (file_bytes, filename, content_type). Scales the stored GLB so
-    its bounding box equals the requested millimeter dimensions, then exports
-    to `fmt`."""
-    if fmt not in _FORMATS:
-        raise AppError(
-            status_code=400,
-            error_code="unsupported_format",
-            human_message=f"Can't export as '{fmt}'.",
-            suggested_action="Choose STL or GLB.",
-        )
-
+def _load_scaled_mesh(job_id: str, width_mm: float, height_mm: float, depth_mm: float) -> "trimesh.Trimesh":
+    """Shared by export and the print-cost estimator: loads the stored GLB and
+    scales it to the requested real millimeter dimensions."""
     source = STORAGE_DIR / f"{job_id}.glb"
     if not source.exists():
         raise AppError(
@@ -70,9 +55,40 @@ def build_export(
             suggested_action="Regenerate the scan and try again.",
         )
 
-    targets = [width_mm, height_mm, depth_mm]
-    if all(t is not None and t > 0 for t in targets):
-        mesh = _scale_to_dimensions(mesh, [float(t) for t in targets])  # type: ignore[arg-type]
+    if width_mm > 0 and height_mm > 0 and depth_mm > 0:
+        mesh = _scale_to_dimensions(mesh, [width_mm, height_mm, depth_mm])
+
+    return mesh
+
+
+def build_export(
+    job_id: str,
+    fmt: str,
+    width_mm: float | None,
+    height_mm: float | None,
+    depth_mm: float | None,
+) -> tuple[bytes, str, str]:
+    """Returns (file_bytes, filename, content_type). Scales the stored GLB so
+    its bounding box equals the requested millimeter dimensions, then exports
+    to `fmt`."""
+    if fmt not in _FORMATS:
+        raise AppError(
+            status_code=400,
+            error_code="unsupported_format",
+            human_message=f"Can't export as '{fmt}'.",
+            suggested_action="Choose STL or GLB.",
+        )
+
+    mesh = _load_scaled_mesh(job_id, width_mm or 0, height_mm or 0, depth_mm or 0)
+
+    if fmt == "stl":
+        # STL has no up-axis convention — slicers treat Z as vertical (the
+        # build plate is the XY plane). Meshy's GLB is Y-up (glTF convention,
+        # matching the web viewer), so without this the model lands on its
+        # side in a slicer instead of standing the way it was photographed.
+        # GLB export is left in its native orientation — web viewers already
+        # expect Y-up.
+        mesh = _orient_for_print_bed(mesh)
 
     file_type, content_type = _FORMATS[fmt]
     data = mesh.export(file_type=file_type)
@@ -104,3 +120,15 @@ def _scale_to_dimensions(mesh: "trimesh.Trimesh", targets_mm: list[float]) -> "t
     scaled = mesh.copy()
     scaled.apply_scale(scale)
     return scaled
+
+
+def _orient_for_print_bed(mesh: "trimesh.Trimesh") -> "trimesh.Trimesh":
+    """Rotates Y-up (glTF/web) to Z-up (the print-bed convention STL implies)
+    and drops the mesh so its lowest point sits at Z=0 — flat base down,
+    resting on the plate, matching how the object was actually photographed
+    standing rather than lying on its side."""
+    oriented = mesh.copy()
+    rotation = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
+    oriented.apply_transform(rotation)
+    oriented.apply_translation([0.0, 0.0, -float(oriented.bounds[0][2])])
+    return oriented
