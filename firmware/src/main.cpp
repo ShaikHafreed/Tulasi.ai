@@ -17,16 +17,6 @@ const char *gestureName(Gesture g) {
   }
 }
 
-const char *dirName(MoveDir d) {
-  switch (d) {
-    case MoveDir::Up: return "up";
-    case MoveDir::Down: return "down";
-    case MoveDir::Left: return "left";
-    case MoveDir::Right: return "right";
-    default: return "-";
-  }
-}
-
 uint32_t lastSample = 0;
 
 #if DEBUG_SERIAL
@@ -93,8 +83,8 @@ void loop() {
     Serial.print("  mag ");
     Serial.print(event.magnitude, 2);
     if (event.gesture == Gesture::Move) {
-      Serial.print("  dir ");
-      Serial.print(dirName(event.direction));
+      Serial.print("  angle ");
+      Serial.print(event.angleDeg, 1);
     }
     if (event.gesture == Gesture::Rotate) {
       Serial.print("  d ");
@@ -111,6 +101,5 @@ void loop() {
   }
 #else
   (void)gestureName;
-  (void)dirName;
 #endif
 }

@@ -40,32 +40,38 @@ pio device monitor       # 115200 baud serial monitor
 3. BLE starts advertising as **"Tulasi Gesture Glove"**. Connect from the app
    (Settings → *Gesture control (glove)*).
 
-## Gesture mapping
+## Gesture mapping (v3)
 
 Finger-count scheme — matches the webcam track exactly, just read from flex
-sensors instead of a camera:
+sensors instead of a camera. The 3-finger decrease pose from v2 is gone
+entirely; resize is now direction-based off a single 2-finger pose:
 
-| Gesture       | Finger pose                          | Direction/twist source |
-| ------------- | ------------------------------------- | --------------- |
-| `move`        | index finger only extended            | accel tilt from anchor (up/down/left/right) |
-| `resize_up`   | index + middle extended               | — (hold-repeat step) |
-| `resize_down` | index + middle + ring extended        | — (hold-repeat step) |
-| `rotate`      | all five extended (open palm) + twist | gyro (twist rate) |
+| Gesture                 | Finger pose                          | Direction/twist source |
+| ------------------------ | ------------------------------------- | --------------- |
+| `move`                   | index finger only extended            | continuous angle from smoothed roll/pitch, no more 4-way bucket |
+| `resize_up`/`resize_down`| index + middle extended               | pitch vs. an anchor captured on pose entry — above = increase, below = decrease |
+| `rotate`                 | all five extended (open palm) + twist | gyro (twist rate) |
 
-Any other combination (e.g. four fingers) is deliberately unmapped — neutral,
-no action. `rotate` is a **held pose**: holding it keeps emitting (~50Hz)
-instead of firing once. `move`/`resize_up`/`resize_down` instead fire as
-discrete hold-repeat steps — one immediate step the instant the finger pose
-is stable, then a slower repeat every ~180ms while it's held, same cadence as
-the webcam track's `holdRepeat.ts`. Move/rotate's tilt/twist reference
-re-centers to wherever your hand rests when it returns to neutral (no
-dedicated recenter gesture). Priority per frame is rotate → resize → move.
+Any other combination (e.g. three or four fingers) is deliberately unmapped —
+neutral, no action. `rotate` and `move` are both **continuous**: holding
+either keeps emitting every processed frame (~50Hz), not a one-shot step —
+move used to be hold-repeat, v3 drops that in favor of a live angle, same as
+the webcam track. `resize_up`/`resize_down` still fire as repeated steps
+while past the anchor deadzone, but now at a *steady* rate from the moment
+the deadzone is cleared — no more instant-big-step-then-pause, see
+`holdRepeatGate()` in `gestures.cpp`. Move's tilt reference and rotate's
+twist reference both re-center to wherever your hand rests when it returns
+to neutral (no dedicated recenter gesture); resize's anchor instead
+re-centers every time the 2-finger pose is freshly entered. Priority per
+frame is rotate → resize → move.
 
-Honest limitation: the MPU6050 has no magnetometer, so there's no reliable yaw.
-`move` gets up/down from pitch and left/right from roll, and `rotate` uses the
-gyro twist *rate* (an active motion) specifically so it stays separable from a
-held tilt. This is the clean, reliable 4-gesture split for a single 6-DOF IMU —
-matching the "reliability over more gestures" mandate.
+Honest limitation: the MPU6050 has no magnetometer, so there's no reliable
+yaw. `move`'s continuous angle is `atan2(pitch, roll)` off the smoothed tilt
+— which physical axis reads as which on-screen direction is unverified
+without real hardware (see the comment in `gestures.cpp`) and may need an
+axis swap or sign flip once a physical glove exists. `rotate` uses the gyro
+twist *rate* (an active motion) specifically so it stays separable from a
+held tilt.
 
 ## Tuning workflow
 
@@ -82,15 +88,16 @@ twist wrist → `gyro` spikes, tilt → `roll`/`pitch` move) *before* trusting a
 `>>` gesture line. Then adjust the named thresholds at the top of
 [`src/gestures.cpp`](src/gestures.cpp) — `FLEX_CURL_THRESHOLD` (per-finger,
 the one to retune first — it depends on your voltage dividers and finger
-travel), `ROTATE_RATE_DEADZONE`, `MOVE_TILT_DEADZONE_DEG`,
-`HOLD_REPEAT_DELAY_MS`/`HOLD_REPEAT_INTERVAL_MS`, etc.
+travel), `ROTATE_RATE_DEADZONE`, `TILT_SMOOTHING_FACTOR`,
+`RESIZE_DEADZONE_DEG`, `HOLD_REPEAT_INTERVAL_MS`, etc.
 Set `DEBUG_SERIAL 0` for battery/production use.
 
 ## BLE contract
 
 - Service UUID `6d7a9f10-2c3b-4e5a-8f21-9b0c1d2e3f40`
 - Characteristic UUID `6d7a9f11-2c3b-4e5a-8f21-9b0c1d2e3f40` (read + notify)
-- 14-byte little-endian payload: `gesture:u8, direction:u8, magnitude:f32,
-  signedDelta:f32, timestamp:u32`
+- 17-byte little-endian payload: `gesture:u8, angleDeg:f32, magnitude:f32,
+  signedDelta:f32, timestamp:u32` (`angleDeg` replaced the old
+  `direction:u8` 4-way enum in gesture v3 — continuous move direction)
 
 These must match `frontend/src/lib/gloveGesture.ts` exactly.

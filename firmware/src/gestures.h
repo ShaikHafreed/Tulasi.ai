@@ -15,17 +15,13 @@ enum class Gesture : uint8_t {
   None = 255,
 };
 
-enum class MoveDir : uint8_t {
-  None = 0,
-  Up = 1,
-  Down = 2,
-  Left = 3,
-  Right = 4,
-};
-
 struct GestureEvent {
   Gesture gesture;
-  MoveDir direction;   // meaningful only for Move
+  // Continuous 360° direction, degrees, standard math convention (0=+X,
+  // 90=+Y) — meaningful only for Move. Supersedes the old MoveDir 4-way
+  // enum (gesture v3): no more directional bucket, matches the webcam
+  // track's continuous angleDeg exactly.
+  float angleDeg;
   float magnitude;     // 0..1
   float signedDelta;   // degrees, meaningful only for Rotate
   uint32_t timestamp;  // millis()
@@ -39,11 +35,9 @@ void reset();
 
 // Classifies one filtered frame. Returns true and fills `out` when a gesture
 // should be emitted this frame, false when the hand is neutral / mid-
-// transition. Rotate emits continuously, every frame, once debounced (an
-// active twist, not a held shape). Move/ResizeUp/ResizeDown are discrete
-// hold-repeat steps instead — one immediate step when the finger pose
-// becomes stable, then a slower repeat while it's held, matching the webcam
-// track's holdRepeat.ts.
+// transition. Rotate and Move both emit continuously, every frame, once
+// debounced. ResizeUp/ResizeDown fire via holdRepeatGate's steady-rate mode
+// (condition true = past the anchor deadzone) — see gestures.cpp.
 bool classify(const SensorFrame &f, uint32_t nowMs, GestureEvent &out);
 
 }  // namespace gestures

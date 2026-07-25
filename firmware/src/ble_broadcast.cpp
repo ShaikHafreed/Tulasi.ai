@@ -27,19 +27,20 @@ class ConnCallbacks : public BLEServerCallbacks {
 
 // Packed little-endian payload — must match the DataView parse in
 // frontend/src/lib/gloveGesture.ts byte-for-byte:
-//   [0]     gesture   (uint8)
-//   [1]     direction (uint8)
-//   [2..5]  magnitude (float32)
-//   [6..9]  signedDelta (float32)
-//   [10..13] timestamp (uint32)
-constexpr size_t PAYLOAD_LEN = 14;
+//   [0]      gesture     (uint8)
+//   [1..4]   angleDeg    (float32) — meaningful only for Move (gesture v3;
+//                                    replaced the old direction:uint8 enum)
+//   [5..8]   magnitude   (float32)
+//   [9..12]  signedDelta (float32)
+//   [13..16] timestamp   (uint32)
+constexpr size_t PAYLOAD_LEN = 17;
 
 void pack(const GestureEvent &e, uint8_t *buf) {
   buf[0] = static_cast<uint8_t>(e.gesture);
-  buf[1] = static_cast<uint8_t>(e.direction);
-  memcpy(buf + 2, &e.magnitude, 4);
-  memcpy(buf + 6, &e.signedDelta, 4);
-  memcpy(buf + 10, &e.timestamp, 4);
+  memcpy(buf + 1, &e.angleDeg, 4);
+  memcpy(buf + 5, &e.magnitude, 4);
+  memcpy(buf + 9, &e.signedDelta, 4);
+  memcpy(buf + 13, &e.timestamp, 4);
 }
 
 }  // namespace

@@ -9,18 +9,16 @@
 // flex numbers in particular depend on your specific voltage dividers and
 // finger travel, so expect to adjust them on the first hardware pass.
 //
-// FINGER-COUNT SCHEME — mirrors the webcam track (frontend/src/lib/
-// webcamGesture.ts), supersedes the old whole-hand fist/splay resize +
-// tilt-anywhere move design:
-//   index only               -> Move (direction from the existing tilt logic)
-//   index + middle            -> ResizeUp ("increase") — hold-repeat
-//   index + middle + ring     -> ResizeDown ("decrease") — hold-repeat
+// FINGER-COUNT SCHEME v3 — mirrors the webcam track (frontend/src/lib/
+// webcamGesture.ts). 3-finger decrease pose REMOVED entirely (was the most
+// flicker-prone transition); Move is continuous 360°, not tilt-bucketed:
+//   index only               -> Move, continuous direction from smoothed
+//                                roll/pitch, no more 4-way bucket
+//   index + middle            -> Resize: above a pitch anchor = continuous
+//                                increase, below = continuous decrease,
+//                                deadzone near the anchor = no change
 //   all five extended + twist -> Rotate — unchanged continuous behavior
-// Any other combination (e.g. four fingers) is deliberately unmapped.
-//
-// Move/ResizeUp/ResizeDown fire as discrete hold-repeat steps (one immediate
-// step, then a slower repeat while held) instead of firing every frame —
-// see holdRepeatGate() below, the C++ equivalent of holdRepeat.ts.
+// Any other combination (e.g. three or four fingers) is unmapped.
 // ===========================================================================
 
 // --- Per-finger curl detection ----------------------------------------------
@@ -32,31 +30,31 @@ static const float FLEX_CURL_THRESHOLD = 250.0f;
 enum FingerIndex { kThumb = 0, kIndex = 1, kMiddle = 2, kRing = 3, kPinky = 4 };
 
 // --- Rotate (gyro twist): an ACTIVE wrist twist about the pointing axis ----
-// Using the gyro rate (not static roll) keeps rotate separable from a held
-// tilt used for Move — twisting produces rate, holding a tilt does not.
 static const int GYRO_TWIST_AXIS = 0;  // 0=x (roll/twist), 1=y, 2=z
 static const float ROTATE_RATE_DEADZONE = 25.0f;   // deg/s below this = not rotating
 static const float ROTATE_DEGREES_PER_RATE = 0.12f;  // gyro deg/s → view degrees/frame
 static const float ROTATE_MAGNITUDE_RATE = 250.0f;   // deg/s that maps to full magnitude
 
-// --- Move (accel tilt): held tilt away from the neutral anchor -------------
-// Direction only — finger geometry has no notion of "which way", so this
-// stays IMU-driven exactly as before; only the entry condition (index-only)
-// changed.
-static const float MOVE_TILT_DEADZONE_DEG = 12.0f;
+// --- Move (accel tilt): continuous direction, smoothed the same way the
+// webcam track smooths its pointing vector — EMA over the raw roll/pitch
+// signal itself (not the angle computed from it), so there's no wraparound
+// artifact. Weight on the NEW sample each frame — tune by feel.
+static const float TILT_SMOOTHING_FACTOR = 0.3f;
 
-// --- Hold-repeat (Move/ResizeUp/ResizeDown): one immediate step, then a
-// slower repeat while the pose is held — same cadence as the webcam track's
-// holdRepeat.ts (HOLD_REPEAT_DELAY_MS / HOLD_REPEAT_INTERVAL_MS there).
-static const uint32_t HOLD_REPEAT_DELAY_MS = 400;
+// --- Resize (tilt vs. anchor): pitch relative to the value captured the
+// instant the 2-finger pose was entered.
+static const float RESIZE_DEADZONE_DEG = 6.0f;
+static const float RESIZE_STEP_MAGNITUDE = 0.4f;
+
+// --- Hold-repeat (Resize only now — Move is continuous like Rotate): a
+// steady rate for as long as the pose is past the deadzone, no initial-delay
+// gap — same cadence as the webcam track's holdRepeat.ts immediateRepeat mode.
 static const uint32_t HOLD_REPEAT_INTERVAL_MS = 180;
-static const float INITIAL_STEP_MAGNITUDE = 1.0f;
-static const float REPEAT_STEP_MAGNITUDE = 0.35f;
 
 // --- Debounce ---------------------------------------------------------------
 // A newly-classified gesture TYPE must stay stable this long before it starts
-// firing, so hand transitions don't spit spurious gestures. The 1<->2 and
-// 2<->3 finger transitions are the most flicker-prone — test those first.
+// firing, so hand transitions don't spit spurious gestures. The 1<->2 finger
+// transition is the most flicker-prone — test that first.
 static const uint32_t DEBOUNCE_MS = 150;
 
 namespace gestures {
@@ -66,13 +64,23 @@ bool haveAnchor = false;
 float anchorRoll = 0;
 float anchorPitch = 0;
 
+// Smoothed roll/pitch, updated every frame regardless of pose (same reasoning
+// as the webcam track: already warmed up by the time Move starts, no lag).
+bool haveSmoothed = false;
+float smoothedRoll = 0;
+float smoothedPitch = 0;
+
+// Resize's pitch anchor — captured fresh each time the 2-finger pose is
+// entered, cleared the instant it isn't.
+bool haveResizeAnchor = false;
+float resizeAnchorPitch = 0;
+
 Gesture pendingType = Gesture::None;
 uint32_t pendingSince = 0;
 Gesture stableType = Gesture::None;
 
-// Hold-repeat state for the currently-stable Move/ResizeUp/ResizeDown type.
+// Steady-rate state for the currently-stable Resize direction.
 Gesture holdType = Gesture::None;
-uint32_t holdSince = 0;
 uint32_t holdLastFire = 0;
 
 bool curled(const SensorFrame &f, int finger) { return f.flex[finger] > FLEX_CURL_THRESHOLD; }
@@ -92,22 +100,18 @@ bool debounced(Gesture type, uint32_t now) {
   return stableType == type;
 }
 
-// C++ equivalent of holdRepeat.ts: given a debounce-stable gesture type,
-// decides whether THIS frame should actually emit — an immediate step the
-// instant the type becomes stable, then a repeat every HOLD_REPEAT_INTERVAL_MS
-// once HOLD_REPEAT_DELAY_MS has elapsed, nothing in between.
-bool holdRepeatGate(Gesture type, uint32_t now, float &magnitudeOut) {
+// C++ equivalent of holdRepeat.ts's immediateRepeat mode: given a
+// debounce-stable gesture type, fires immediately on entry, then every
+// HOLD_REPEAT_INTERVAL_MS with no initial-delay gap — a steady rate from
+// the start, not an arrow-key-style pause-then-repeat.
+bool holdRepeatGate(Gesture type, uint32_t now) {
   if (type != holdType) {
     holdType = type;
-    holdSince = now;
     holdLastFire = now;
-    magnitudeOut = INITIAL_STEP_MAGNITUDE;
     return true;
   }
-  if (now - holdSince < HOLD_REPEAT_DELAY_MS) return false;
   if (now - holdLastFire < HOLD_REPEAT_INTERVAL_MS) return false;
   holdLastFire = now;
-  magnitudeOut = REPEAT_STEP_MAGNITUDE;
   return true;
 }
 
@@ -117,6 +121,8 @@ float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
 void reset() {
   haveAnchor = false;
+  haveSmoothed = false;
+  haveResizeAnchor = false;
   pendingType = Gesture::None;
   stableType = Gesture::None;
   holdType = Gesture::None;
@@ -124,7 +130,7 @@ void reset() {
 
 bool classify(const SensorFrame &f, uint32_t nowMs, GestureEvent &out) {
   out.timestamp = nowMs;
-  out.direction = MoveDir::None;
+  out.angleDeg = 0;
   out.signedDelta = 0;
 
   const bool thumbExtended = !curled(f, kThumb);
@@ -134,17 +140,36 @@ bool classify(const SensorFrame &f, uint32_t nowMs, GestureEvent &out) {
   const bool pinkyExtended = !curled(f, kPinky);
 
   const bool moveShape = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
-  const bool increaseShape = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
-  const bool decreaseShape = indexExtended && middleExtended && ringExtended && !pinkyExtended;
+  const bool resizeShape = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
   const bool openPalmShape = thumbExtended && indexExtended && middleExtended && ringExtended && pinkyExtended;
 
-  // Anchor the IMU tilt/rotate reference on any frame the hand isn't mid
+  // Anchor the rotate-twist reference on any frame the hand isn't mid
   // finger-pose-transition — re-centers whenever tracking would otherwise be
   // ambiguous, same intent as the webcam track's per-loss re-anchor.
   if (!haveAnchor) {
     anchorRoll = f.roll;
     anchorPitch = f.pitch;
     haveAnchor = true;
+  }
+
+  // Smooth roll/pitch continuously (see TILT_SMOOTHING_FACTOR's comment).
+  if (!haveSmoothed) {
+    smoothedRoll = f.roll;
+    smoothedPitch = f.pitch;
+    haveSmoothed = true;
+  } else {
+    smoothedRoll = smoothedRoll * (1 - TILT_SMOOTHING_FACTOR) + f.roll * TILT_SMOOTHING_FACTOR;
+    smoothedPitch = smoothedPitch * (1 - TILT_SMOOTHING_FACTOR) + f.pitch * TILT_SMOOTHING_FACTOR;
+  }
+
+  // Resize's pitch anchor — captured on pose entry, cleared on pose exit.
+  if (resizeShape) {
+    if (!haveResizeAnchor) {
+      resizeAnchorPitch = f.pitch;
+      haveResizeAnchor = true;
+    }
+  } else {
+    haveResizeAnchor = false;
   }
 
   // --- Rotate: open palm + active twist — continuous, not hold-repeat -------
@@ -161,49 +186,39 @@ bool classify(const SensorFrame &f, uint32_t nowMs, GestureEvent &out) {
     return false;
   }
 
-  // --- Increase / Decrease: index+middle(+ring) — hold-repeat ---------------
-  if (decreaseShape) {
-    if (!debounced(Gesture::ResizeDown, nowMs)) return false;
-    float magnitude;
-    if (!holdRepeatGate(Gesture::ResizeDown, nowMs, magnitude)) return false;
-    out.gesture = Gesture::ResizeDown;
-    out.magnitude = magnitude;
-    return true;
-  }
-  if (increaseShape) {
-    if (!debounced(Gesture::ResizeUp, nowMs)) return false;
-    float magnitude;
-    if (!holdRepeatGate(Gesture::ResizeUp, nowMs, magnitude)) return false;
-    out.gesture = Gesture::ResizeUp;
-    out.magnitude = magnitude;
-    return true;
-  }
-
-  // --- Move: index only — direction from held tilt, hold-repeat -------------
-  if (moveShape) {
-    const float dRoll = f.roll - anchorRoll;
-    const float dPitch = f.pitch - anchorPitch;
-    const float tilt = fmaxf(fabsf(dRoll), fabsf(dPitch));
-    MoveDir direction = MoveDir::None;
-    if (tilt > MOVE_TILT_DEADZONE_DEG) {
-      direction = fabsf(dPitch) > fabsf(dRoll) ? (dPitch > 0 ? MoveDir::Up : MoveDir::Down)
-                                                : (dRoll > 0 ? MoveDir::Right : MoveDir::Left);
-    }
-    if (direction == MoveDir::None) {
+  // --- Resize: index+middle — steady-rate while past the pitch deadzone -----
+  if (resizeShape) {
+    const float deltaPitch = f.pitch - resizeAnchorPitch;
+    if (fabsf(deltaPitch) < RESIZE_DEADZONE_DEG) {
       debounced(Gesture::None, nowMs);
+      holdType = Gesture::None;
       return false;
     }
-    if (!debounced(Gesture::Move, nowMs)) return false;
-    float magnitude;
-    if (!holdRepeatGate(Gesture::Move, nowMs, magnitude)) return false;
-    out.gesture = Gesture::Move;
-    out.direction = direction;
-    out.magnitude = magnitude;
+    const Gesture type = deltaPitch > 0 ? Gesture::ResizeUp : Gesture::ResizeDown;
+    if (!debounced(type, nowMs)) return false;
+    if (!holdRepeatGate(type, nowMs)) return false;
+    out.gesture = type;
+    out.magnitude = RESIZE_STEP_MAGNITUDE;
     return true;
   }
 
-  // Neutral / unmapped finger combination (e.g. four fingers) — nothing to
-  // emit, let the debounce and hold-repeat state settle back to None.
+  // --- Move: index only — continuous direction from smoothed tilt -----------
+  if (moveShape) {
+    const float dRoll = smoothedRoll - anchorRoll;
+    const float dPitch = smoothedPitch - anchorPitch;
+    if (!debounced(Gesture::Move, nowMs)) return false;
+    out.gesture = Gesture::Move;
+    // Treats roll as the x-equivalent axis, pitch as y — unverified against
+    // real hardware (no physical glove exists yet), may need the axes
+    // swapped or a sign flipped once it does; tune this on the first
+    // hardware pass same as the flex/tilt thresholds above.
+    out.angleDeg = atan2f(dPitch, dRoll) * 180.0f / static_cast<float>(M_PI);
+    out.magnitude = 1.0f;
+    return true;
+  }
+
+  // Neutral / unmapped finger combination (e.g. three or four fingers) —
+  // nothing to emit, let the debounce and hold-repeat state settle back.
   debounced(Gesture::None, nowMs);
   holdType = Gesture::None;
   return false;
