@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { WebcamGestureTracker, type GestureDebugInfo, type GestureEvent, type TrackedPoint } from '@/lib/webcamGesture'
 import { applyGestureEvent, type CurrentDimensions } from '@/lib/gestureToCommand'
 import { getPreferredCameraDeviceId, setPreferredCameraDeviceId } from '@/lib/gesturePreference'
+import GestureDirectionArrow, { type GestureFeedback } from '@/components/gesture/GestureDirectionArrow'
 
 // 2x the original 200x150 — was too small to actually see hand tracking by
 // eye. Matches the camera's ideal capture resolution below 1:1 so it isn't
@@ -182,6 +183,13 @@ export default function WebcamGesturePanel({
 
   if (!enabled) return null
 
+  const gestureFeedback: GestureFeedback =
+    debug?.moveAngleDeg != null
+      ? { mode: 'move', angleDeg: debug.moveAngleDeg }
+      : debug?.resizeDirection
+        ? { mode: 'resize', increasing: debug.resizeDirection === 'increase' }
+        : null
+
   return (
     <div className="fixed bottom-4 left-4 z-50 w-fit overflow-hidden rounded-lg border border-border bg-card/95 shadow-lg backdrop-blur">
       <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
@@ -218,6 +226,12 @@ export default function WebcamGesturePanel({
       <div className="relative" style={{ width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT }}>
         <video ref={videoRef} className="hidden" muted playsInline />
         <canvas ref={canvasRef} width={OVERLAY_WIDTH} height={OVERLAY_HEIGHT} className="block" />
+
+        {status === 'active' && gestureFeedback && (
+          <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 p-0.5">
+            <GestureDirectionArrow feedback={gestureFeedback} />
+          </div>
+        )}
 
         {status !== 'active' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-background/90 px-3 text-center">

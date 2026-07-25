@@ -11,12 +11,6 @@ const GESTURE_BY_CODE: Record<number, GestureType> = {
   2: 'resize_up',
   3: 'resize_down',
 }
-const DIRECTION_BY_CODE: Record<number, GestureEvent['direction']> = {
-  1: 'up',
-  2: 'down',
-  3: 'left',
-  4: 'right',
-}
 
 export type GloveStatus = 'idle' | 'connecting' | 'connected' | 'unsupported' | 'error'
 
@@ -31,20 +25,21 @@ export function isWebBluetoothSupported(): boolean {
   return typeof navigator !== 'undefined' && 'bluetooth' in navigator
 }
 
-// Parses the firmware's 14-byte little-endian payload into the same
+// Parses the firmware's 17-byte little-endian payload into the same
 // GestureEvent shape the webcam track emits, so both feed gestureToCommand.ts
-// unchanged. Layout: gesture:u8, direction:u8, magnitude:f32, signedDelta:f32,
-// timestamp:u32.
+// unchanged. Layout: gesture:u8, angleDeg:f32, magnitude:f32, signedDelta:f32,
+// timestamp:u32. angleDeg replaced the old direction:u8 enum (gesture v3 —
+// continuous 360° move, no more 4-way bucket) — only meaningful for 'move'.
 function parsePayload(view: DataView): GestureEvent | null {
-  if (view.byteLength < 14) return null
+  if (view.byteLength < 17) return null
   const gesture = GESTURE_BY_CODE[view.getUint8(0)]
   if (!gesture) return null
   return {
     gesture,
-    direction: DIRECTION_BY_CODE[view.getUint8(1)],
-    magnitude: view.getFloat32(2, true),
-    signedDelta: view.getFloat32(6, true),
-    timestamp: view.getUint32(10, true),
+    angleDeg: gesture === 'move' ? view.getFloat32(1, true) : undefined,
+    magnitude: view.getFloat32(5, true),
+    signedDelta: view.getFloat32(9, true),
+    timestamp: view.getUint32(13, true),
   }
 }
 

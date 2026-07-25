@@ -19,7 +19,10 @@ export interface RotateViewParams {
 }
 
 export interface PanViewParams {
-  direction: 'up' | 'down' | 'left' | 'right'
+  // Continuous 360° direction in degrees (standard math convention: 0 =
+  // +X/right, 90 = +Y/up, image-space Y already flipped by the caller) —
+  // supersedes the old 4-way up/down/left/right bucket.
+  angleDeg: number
   magnitude: number
 }
 

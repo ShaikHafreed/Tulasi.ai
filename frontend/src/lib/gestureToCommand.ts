@@ -24,8 +24,8 @@ export function applyGestureEvent(event: GestureEvent, getDimensions: () => Curr
       return
     }
     case 'move': {
-      if (!isCommandAvailable('panView') || !event.direction) return
-      executeCommand('panView', { direction: event.direction, magnitude: event.magnitude })
+      if (!isCommandAvailable('panView') || event.angleDeg === undefined) return
+      executeCommand('panView', { angleDeg: event.angleDeg, magnitude: event.magnitude })
       return
     }
     case 'resize_up':

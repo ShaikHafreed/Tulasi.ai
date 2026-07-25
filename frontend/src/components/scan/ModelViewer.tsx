@@ -13,7 +13,9 @@ export interface RotationTrigger {
 }
 
 export interface PanTrigger {
-  direction: 'up' | 'down' | 'left' | 'right'
+  // Continuous 360° angle (standard math convention, degrees) — supersedes
+  // the old 4-way direction bucket.
+  angleDeg: number
   magnitude: number
   nonce: number
 }
@@ -94,11 +96,13 @@ function Model({
   useEffect(() => {
     if (!panTrigger || panTrigger.nonce === appliedPanNonce.current) return
     appliedPanNonce.current = panTrigger.nonce
+    // angleDeg is standard math convention (0=+X/right, 90=+Y/up) by the time
+    // it reaches here — webcamGesture.ts/firmware already convert from their
+    // own image/sensor space, so this is pure trig, no axis-flip knowledge.
     const step = panTrigger.magnitude * PAN_UNITS_PER_MAGNITUDE
-    if (panTrigger.direction === 'left') scene.position.x -= step
-    else if (panTrigger.direction === 'right') scene.position.x += step
-    else if (panTrigger.direction === 'up') scene.position.y += step
-    else scene.position.y -= step
+    const rad = (panTrigger.angleDeg * Math.PI) / 180
+    scene.position.x += Math.cos(rad) * step
+    scene.position.y += Math.sin(rad) * step
     invalidate()
   }, [panTrigger, scene, invalidate])
 
