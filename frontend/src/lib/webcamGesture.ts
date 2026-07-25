@@ -385,12 +385,23 @@ export class WebcamGestureTracker {
 
     // Hysteresis-aware per-finger extended check: which threshold applies
     // depends on whether the finger was ALREADY extended last frame.
+    //
+    // distanceOk OR angleOk, not AND — real footage (a held 2-finger V pose,
+    // ~2s straight) showed the middle finger's tip clearly farther from the
+    // wrist than its PIP (a genuinely extended finger by any reasonable
+    // read) while its 2D-projected PIP angle stayed under threshold purely
+    // from perspective foreshortening at that hand tilt, permanently
+    // misreading the pose as 1-finger Move instead of 2-finger Resize. The
+    // angle check's actual job — catching a curled finger on a rotated hand
+    // that the distance check alone would miss — only needs ONE of the two
+    // signals to agree a finger is curled; requiring BOTH to agree it's
+    // extended made the angle check a veto instead of a rescue.
     const extendedWithHysteresis = (mcp: TrackedPoint, pip: TrackedPoint, tip: TrackedPoint, wasExtended: boolean): boolean => {
       const marginRatio = wasExtended ? EXTENDED_MARGIN_RATIO_EXIT : EXTENDED_MARGIN_RATIO_ENTER
       const angleThreshold = wasExtended ? PIP_STRAIGHT_ANGLE_EXIT_DEG : PIP_STRAIGHT_ANGLE_ENTER_DEG
       const distanceOk = distance2d(tip, wrist) > distance2d(pip, wrist) + marginRatio * handSpan
       const angleOk = jointAngleDeg(mcp, pip, tip) > angleThreshold
-      return distanceOk && angleOk
+      return distanceOk || angleOk
     }
     const thumbSpread = distance2d(thumbTip, indexMcp)
     const thumbExtendedNow =
