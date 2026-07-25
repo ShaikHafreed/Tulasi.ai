@@ -1,10 +1,14 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls, Stage, useGLTF } from '@react-three/drei'
+import { Grid, OrbitControls, Stage, useGLTF } from '@react-three/drei'
 import { Box, Layers, Maximize2, Minimize2 } from 'lucide-react'
 import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { registerCommandHandlers } from '@/lib/tulasiCommands'
+
+// Margin beyond the model's bounding sphere so it doesn't touch the frame
+// edges when the camera auto-fits on load.
+const CAMERA_FIT_MARGIN = 1.25
 
 export interface RotationTrigger {
   axis: 'x' | 'y'
@@ -44,10 +48,13 @@ function Model({
   const { scene } = useGLTF(url)
   const invalidate = useThree((state) => state.invalidate)
   const gl = useThree((state) => state.gl)
+  const camera = useThree((state) => state.camera)
+  const viewportSize = useThree((state) => state.size)
   const baseScale = useRef(1)
   const appliedNonce = useRef<number | null>(null)
   const appliedPanNonce = useRef<number | null>(null)
   const snapshotTaken = useRef(false)
+  const cameraFitted = useRef(false)
 
   useEffect(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -55,6 +62,31 @@ function Model({
     const maxDim = Math.max(size.x, size.y, size.z) || 1
     baseScale.current = 2 / maxDim
     scene.scale.setScalar(baseScale.current * scale)
+
+    // Fit the camera to the real post-scale bounding sphere once, on the
+    // model's first load — not on every scale change, or a gesture-driven
+    // resize would keep yanking the camera back to a fixed distance and
+    // fight whatever angle/zoom the user (or OrbitControls) already set.
+    // This was the actual cause of the model rendering tiny in a mostly-
+    // empty canvas: adjustCamera={false} on <Stage> below (deliberately, so
+    // resize/pan gestures don't fight Stage's own auto-fit) meant nothing
+    // ever framed the camera correctly on load either — the fixed
+    // position=[0,0,3] doesn't reliably frame every object's real
+    // proportions once its own bounding sphere is accounted for.
+    if (!cameraFitted.current && camera instanceof THREE.PerspectiveCamera) {
+      cameraFitted.current = true
+      const sphere = box.getBoundingSphere(new THREE.Sphere())
+      const radius = sphere.radius * baseScale.current || 1
+      const vFov = (camera.fov * Math.PI) / 180
+      const aspect = viewportSize.width / viewportSize.height
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
+      const distance = Math.max(radius / Math.sin(vFov / 2), radius / Math.sin(hFov / 2)) * CAMERA_FIT_MARGIN
+      camera.position.set(0, 0, distance)
+      camera.near = Math.max(distance / 100, 0.01)
+      camera.far = distance * 100
+      camera.lookAt(0, 0, 0)
+      camera.updateProjectionMatrix()
+    }
     invalidate()
 
     if (onSnapshot && !snapshotTaken.current) {
@@ -118,6 +150,7 @@ function Model({
   }, [wireframe, scene, invalidate])
 
   useEffect(() => {
+    cameraFitted.current = false
     return () => {
       useGLTF.clear(url)
     }
@@ -217,7 +250,13 @@ export default function ModelViewer({
         style={{ height: presentationMode ? '100vh' : '420px' }}
       >
         <Suspense fallback={null}>
-          <Stage environment="city" intensity={0.5} adjustCamera={false}>
+          {/* "studio" instead of the old "city" HDRI — a neutral, non-
+              photographic environment reads like a CAD/3D-software viewport
+              (what was actually being asked for) instead of an outdoor photo
+              reflecting off the model. shadows="contact" is the soft
+              grounding shadow under the object; the Grid below is the
+              floor-plane reference Blender's viewport always shows. */}
+          <Stage environment="studio" intensity={0.55} shadows="contact" adjustCamera={false}>
             <Model
               url={modelUrl}
               scale={scale}
@@ -228,6 +267,22 @@ export default function ModelViewer({
             />
           </Stage>
         </Suspense>
+        {/* Blender-style floor grid reference — fades with distance so it
+            reads as a subtle spatial cue, not a dominant pattern, given the
+            model itself usually only spans a couple of the grid's units. */}
+        <Grid
+          position={[0, -1, 0]}
+          args={[10.5, 10.5]}
+          cellSize={0.5}
+          cellThickness={0.5}
+          cellColor="#2b241d"
+          sectionSize={2.5}
+          sectionThickness={1}
+          sectionColor="#c96f4a"
+          fadeDistance={12}
+          fadeStrength={1.5}
+          infiniteGrid
+        />
         <OrbitControls makeDefault />
       </Canvas>
 
