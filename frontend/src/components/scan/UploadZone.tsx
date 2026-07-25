@@ -34,6 +34,33 @@ export default function UploadZone({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Ctrl+V anywhere while this screen is open drops the image into the first
+  // empty slot — no drag-and-drop or file browser detour needed. A document-
+  // level listener rather than a focus-scoped one since there's no single
+  // "paste target" element to focus for a whole-screen paste shortcut; it's
+  // still safe against stray pastes elsewhere on the page because a text
+  // paste never carries an image clipboard item, so this only ever fires on
+  // an actual pasted image.
+  useEffect(() => {
+    if (disabled) return
+    function onPaste(event: ClipboardEvent) {
+      const item = Array.from(event.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'))
+      if (!item) return
+      const file = item.getAsFile()
+      if (!file) return
+      event.preventDefault()
+      const emptyIndex = files.findIndex((f) => f === null)
+      if (emptyIndex === -1) {
+        onValidationError('All 4 photo slots are already used — remove one first.')
+        return
+      }
+      setSlot(emptyIndex, file)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, files])
+
   function validate(file: File): boolean {
     if (!ACCEPTED_TYPES.includes(file.type)) {
       onValidationError('Only JPEG or PNG photos are supported.')
@@ -143,6 +170,7 @@ export default function UploadZone({
 
       <p className="text-xs text-muted-foreground">
         Front photo required. Add up to 4 angles — more views give Meshy better geometry. JPEG or PNG, under 100MB.
+        Paste (Ctrl+V) a copied image to fill the next open slot.
       </p>
 
       <Button type="button" variant="warm" disabled={chosen.length === 0} onClick={() => onFilesSelected(chosen)} className="w-fit">
