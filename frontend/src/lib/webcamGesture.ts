@@ -1,5 +1,29 @@
 import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision'
 import { HoldRepeat } from './holdRepeat'
+import { LandmarkFilter } from './oneEuroFilter'
+
+// ===========================================================================
+// FINGER-STATE ENCODING: every frame reduces the 21 MediaPipe hand landmarks
+// to a 5-bit "which fingers are extended" pattern (FingerState below), judged
+// per-finger from PIP-joint geometry (angle at the joint + tip-vs-PIP
+// distance from the wrist), not a naive y-coordinate comparison — that fails
+// whenever the hand is rotated relative to the camera.
+//
+// GESTURE DEFINITIONS (single hand, held poses):
+//   1 finger  (index only)     → Move: continuous 360° direction from the
+//                                 smoothed index MCP→tip pointing vector.
+//   2 fingers (index+middle)   → Resize: vertical position vs. an anchor
+//                                 captured on pose entry — above = continuous
+//                                 increase, below = continuous decrease.
+//   5 fingers (open palm)+twist→ Rotate: continuous, from active gyro-style
+//                                 wrist-angle rate vs. an anchor.
+// Any other combination is unmapped/neutral (GestureState.Idle).
+//
+// Every raw landmark position is passed through a One-Euro low-pass filter
+// (oneEuroFilter.ts) — with implausible per-frame jumps rejected outright —
+// before any of the above geometry is computed, so finger-state, pointing
+// angle, and tilt are all judged from filtered, outlier-free positions.
+// ===========================================================================
 
 // Same 4 gestures Track 2 (the physical glove) classifies from flex/IMU
 // data — keep this contract stable so gestureToCommand.ts can map both
@@ -8,6 +32,20 @@ import { HoldRepeat } from './holdRepeat'
 // finger-count based, since gestureToCommand.ts and the glove firmware's
 // Gesture enum both already speak these names.
 export type GestureType = 'rotate' | 'move' | 'resize_up' | 'resize_down'
+
+// Explicit named state machine — mirrors GestureType plus the neutral case,
+// so "what is the tracker currently doing" is always one concrete value
+// instead of an implicit `string | null` key. A const object + union type
+// rather than `enum` — this project's tsconfig runs with erasableSyntaxOnly,
+// which real TS enums (they emit a runtime object) aren't compatible with.
+export const GestureState = {
+  Idle: 'idle',
+  Move: 'move',
+  ResizeUp: 'resize_up',
+  ResizeDown: 'resize_down',
+  Rotate: 'rotate',
+} as const
+export type GestureState = (typeof GestureState)[keyof typeof GestureState]
 
 export interface GestureEvent {
   gesture: GestureType
@@ -31,6 +69,7 @@ export interface TrackedPoint {
 // Live raw numbers behind the current classification, surfaced to the debug
 // panel so thresholds below can be retuned by eye.
 export interface GestureDebugInfo {
+  state: GestureState
   fingers: { thumb: boolean; index: boolean; middle: boolean; ring: boolean; pinky: boolean }
   fingerCount: number
   rotateDeltaDeg: number
@@ -60,25 +99,28 @@ const MIN_HAND_CONFIDENCE = 0.5
 // are the most flicker-prone), matching the glove firmware's 150ms hold.
 const DEBOUNCE_MS = 150
 
-// FINGER-COUNT SCHEME v3 — 3-finger decrease REMOVED (was the most
-// flicker-prone transition); move is now continuous 360°, not 4-way snapped:
-//   0 fingers (fist)                    → neutral, no action
-//   1 finger  (index only)              → Move, continuous 360°, direction =
-//                                          smoothed pointing angle, live
-//   2 fingers (index + middle)          → Resize: above a vertical anchor =
-//                                          continuous increase, below =
-//                                          continuous decrease, deadzone
-//                                          near the anchor = no change
-//   5 fingers (open palm) + wrist twist → Rotate — unchanged continuous
-// Any other combination (e.g. 3 or 4 fingers) is deliberately unmapped.
-//
+// --- Per-finger extended/curled, with HYSTERESIS -----------------------
 // A non-thumb finger is "extended" when its tip sits farther from the wrist
 // than its own PIP joint does, by a hand-size-relative margin (hand size is
 // itself measured as wrist→middle-MCP distance, so this works regardless of
-// how close the hand is to the camera). The thumb moves sideways rather than
-// up/down, so it's judged by tip-to-index-MCP spread instead.
-const EXTENDED_MARGIN_RATIO = 0.15
-const THUMB_SPREAD_RATIO = 0.55
+// how close the hand is to the camera), AND the PIP joint angle (the angle
+// at PIP between MCP→PIP and PIP→TIP) is close to straight — the angle check
+// is what makes this robust to hand rotation, where a pure distance/
+// y-coordinate check falls over. The thumb moves sideways rather than
+// up/down, so it's judged by tip-to-index-MCP spread instead (no PIP-angle
+// equivalent for the thumb's more complex joint).
+//
+// Hysteresis: entering "extended" requires clearing the ENTER margin/angle;
+// leaving it requires dropping below the (looser) EXIT margin/angle. This
+// stops a finger sitting right at the boundary from flickering — the exit
+// threshold is deliberately easier to satisfy than "not-enter" would be, so
+// there's a real dead band between the two, not just one shared cutoff.
+const EXTENDED_MARGIN_RATIO_ENTER = 0.15
+const EXTENDED_MARGIN_RATIO_EXIT = 0.08
+const PIP_STRAIGHT_ANGLE_ENTER_DEG = 160
+const PIP_STRAIGHT_ANGLE_EXIT_DEG = 145
+const THUMB_SPREAD_RATIO_ENTER = 0.55
+const THUMB_SPREAD_RATIO_EXIT = 0.4
 
 // Exponential moving average applied to the index-finger pointing VECTOR
 // (dx, dy), not the angle directly — averaging angles naively wraps
@@ -98,10 +140,32 @@ const ROTATE_MAGNITUDE_RATE = 1 / 30
 const MOVE_MAGNITUDE = 1
 
 // Resize (2 fingers): vertical position relative to the anchor captured on
-// pose entry. Inside the deadzone = no change; past it = continuous
-// increase/decrease at a steady rate via holdRepeat's condition-based firing.
-const RESIZE_DEADZONE = 0.05
+// pose entry. Hysteresis band, same idea as the finger-extended check above:
+// must clear the ENTER deadzone to start increasing/decreasing, must retract
+// inside the (smaller) EXIT deadzone to go back to neutral — stops a hand
+// sitting right at the boundary from flickering resize_up/resize_down/none.
+const RESIZE_DEADZONE_ENTER = 0.05
+const RESIZE_DEADZONE_EXIT = 0.025
 const RESIZE_STEP_MAGNITUDE = 0.4
+
+// One-Euro filter tuning (see oneEuroFilter.ts) for raw landmark positions.
+// minCutoff: lower = smoother when the hand is nearly still. beta: higher =
+// less lag when moving fast (at the cost of more jitter passthrough then).
+const ONE_EURO_MIN_CUTOFF = 1.0
+const ONE_EURO_BETA = 0.3
+const ONE_EURO_D_CUTOFF = 1.0
+const LANDMARK_COUNT = 21
+// Max plausible per-second movement for a single landmark in normalized
+// (0..1) coordinates — a real hand can't teleport across the frame in one
+// ~55ms tick. A raw sample beyond this is a tracking glitch, discarded
+// outright rather than fed into the filter (a low-pass filter alone would
+// just lag behind a spike, not reject it).
+const MAX_LANDMARK_VELOCITY_PER_SEC = 6.0
+
+// Logs state transitions and raw-vs-filtered metrics to the console —
+// verbose, off by default. Flip on to visually tune thresholds against the
+// live webcam feed without needing the on-screen debug readout.
+const DEBUG_GESTURE_LOG = false
 
 // Self-hosted (public/mediapipe/) rather than pulled from external CDNs some
 // networks block — that broke gesture control with an opaque "[object Event]"
@@ -147,6 +211,21 @@ function distance2d(a: TrackedPoint, b: TrackedPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
+// Angle at `pip` between the MCP→PIP and PIP→TIP vectors, in degrees —
+// 180° is perfectly straight, smaller means more curled. More robust than a
+// tip-vs-PIP y-coordinate comparison because it doesn't assume the hand is
+// upright relative to the camera.
+function jointAngleDeg(mcp: TrackedPoint, pip: TrackedPoint, tip: TrackedPoint): number {
+  const v1x = mcp.x - pip.x
+  const v1y = mcp.y - pip.y
+  const v2x = tip.x - pip.x
+  const v2y = tip.y - pip.y
+  const dot = v1x * v2x + v1y * v2y
+  const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) || 1
+  const cos = Math.max(-1, Math.min(1, dot / mag))
+  return (Math.acos(cos) * 180) / Math.PI
+}
+
 export interface WebcamGestureHandlers {
   onFrame?: (landmarks: TrackedPoint[] | null) => void
   onDebug?: (info: GestureDebugInfo | null) => void
@@ -165,6 +244,13 @@ function countExtended(fingers: FingerState): number {
   return Number(fingers.thumb) + Number(fingers.index) + Number(fingers.middle) + Number(fingers.ring) + Number(fingers.pinky)
 }
 
+const STATE_BY_GESTURE: Record<GestureType, GestureState> = {
+  move: GestureState.Move,
+  resize_up: GestureState.ResizeUp,
+  resize_down: GestureState.ResizeDown,
+  rotate: GestureState.Rotate,
+}
+
 // What a frame classifies to before debouncing — the type plus its already-
 // computed parameters, or null when the hand is neutral / mid-transition.
 type Classified = Omit<GestureEvent, 'timestamp'> | null
@@ -180,6 +266,18 @@ export class WebcamGestureTracker {
   private stopped = true
   private generation = 0
 
+  // Low-pass-filters every raw landmark (with outlier rejection) before any
+  // gesture geometry is computed from it.
+  private landmarkFilter = new LandmarkFilter(LANDMARK_COUNT, MAX_LANDMARK_VELOCITY_PER_SEC, {
+    minCutoff: ONE_EURO_MIN_CUTOFF,
+    beta: ONE_EURO_BETA,
+    dCutoff: ONE_EURO_D_CUTOFF,
+  })
+
+  // Per-finger hysteresis memory — each finger's PREVIOUS extended state,
+  // consulted so entering/leaving "extended" use different thresholds.
+  private fingerWasExtended: FingerState = { thumb: false, index: false, middle: false, ring: false, pinky: false }
+
   // Rotate's wrist-angle joystick center. Re-centers whenever the hand is lost.
   private anchorAngleDeg: number | null = null
 
@@ -193,6 +291,8 @@ export class WebcamGestureTracker {
   // Resize's vertical joystick anchor — captured fresh each time the
   // 2-finger pose is entered (cleared whenever it isn't held), per Part 4.
   private resizeAnchorY: number | null = null
+  // Resize's hysteresis memory — the direction currently "latched", if any.
+  private resizeLatched: 'increase' | 'decrease' | null = null
 
   // Debounce state for the classified gesture TYPE. Move's angle is
   // deliberately excluded from the key (it's continuous, changes every
@@ -202,6 +302,7 @@ export class WebcamGestureTracker {
   private candidateKey: string | null = null
   private candidateSince = 0
   private activeKey: string | null = null
+  private loggedState: GestureState | null = null
 
   // Condition-based continuous firing for resize (see holdRepeat.ts) — a
   // steady rate with no initial-delay gap, since Part 4 asks for the resize
@@ -239,27 +340,36 @@ export class WebcamGestureTracker {
   }
 
   private resetTracking(): void {
+    this.landmarkFilter.reset()
+    this.fingerWasExtended = { thumb: false, index: false, middle: false, ring: false, pinky: false }
     this.anchorAngleDeg = null
     this.smoothedDx = null
     this.smoothedDy = null
     this.resizeAnchorY = null
+    this.resizeLatched = null
     this.candidateKey = null
     this.activeKey = null
     this.holdRepeat.stop()
   }
 
   private processResult(result: HandLandmarkerResult, time: number): void {
-    const hand = result.landmarks?.[0]
+    const rawHand = result.landmarks?.[0]
     const confidence = result.handedness?.[0]?.[0]?.score ?? 0
 
     // No hand, too few landmarks, or low confidence → skip this frame and
     // re-center. The second hand (index ≥ 1) is never looked at.
-    if (!hand || hand.length < 21 || confidence < MIN_HAND_CONFIDENCE) {
+    if (!rawHand || rawHand.length < 21 || confidence < MIN_HAND_CONFIDENCE) {
       this.handlers.onFrame?.(null)
       this.handlers.onDebug?.(null)
       this.resetTracking()
       return
     }
+
+    // Every raw landmark goes through the One-Euro filter (with outlier
+    // rejection against MAX_LANDMARK_VELOCITY_PER_SEC) before anything below
+    // touches it — this is the actual fix for frame-to-frame jitter, not a
+    // patch applied after the fact to one derived value.
+    const hand = this.landmarkFilter.filter(rawHand, time / 1000)
 
     this.handlers.onFrame?.(hand)
 
@@ -271,8 +381,10 @@ export class WebcamGestureTracker {
     const middleMcp = hand[9]
     const middlePip = hand[10]
     const middleTip = hand[12]
+    const ringMcp = hand[13]
     const ringPip = hand[14]
     const ringTip = hand[16]
+    const pinkyMcp = hand[17]
     const pinkyPip = hand[18]
     const pinkyTip = hand[20]
 
@@ -280,16 +392,27 @@ export class WebcamGestureTracker {
     // close the hand is to the camera, not just raw pixel/normalized distance.
     const handSpan = distance2d(wrist, middleMcp) || 1
 
-    const extended = (tip: TrackedPoint, pip: TrackedPoint) =>
-      distance2d(tip, wrist) > distance2d(pip, wrist) + EXTENDED_MARGIN_RATIO * handSpan
+    // Hysteresis-aware per-finger extended check: which threshold applies
+    // depends on whether the finger was ALREADY extended last frame.
+    const extendedWithHysteresis = (mcp: TrackedPoint, pip: TrackedPoint, tip: TrackedPoint, wasExtended: boolean): boolean => {
+      const marginRatio = wasExtended ? EXTENDED_MARGIN_RATIO_EXIT : EXTENDED_MARGIN_RATIO_ENTER
+      const angleThreshold = wasExtended ? PIP_STRAIGHT_ANGLE_EXIT_DEG : PIP_STRAIGHT_ANGLE_ENTER_DEG
+      const distanceOk = distance2d(tip, wrist) > distance2d(pip, wrist) + marginRatio * handSpan
+      const angleOk = jointAngleDeg(mcp, pip, tip) > angleThreshold
+      return distanceOk && angleOk
+    }
+    const thumbSpread = distance2d(thumbTip, indexMcp)
+    const thumbExtendedNow =
+      thumbSpread > (this.fingerWasExtended.thumb ? THUMB_SPREAD_RATIO_EXIT : THUMB_SPREAD_RATIO_ENTER) * handSpan
 
     const fingers: FingerState = {
-      thumb: distance2d(thumbTip, indexMcp) > THUMB_SPREAD_RATIO * handSpan,
-      index: extended(indexTip, indexPip),
-      middle: extended(middleTip, middlePip),
-      ring: extended(ringTip, ringPip),
-      pinky: extended(pinkyTip, pinkyPip),
+      thumb: thumbExtendedNow,
+      index: extendedWithHysteresis(indexMcp, indexPip, indexTip, this.fingerWasExtended.index),
+      middle: extendedWithHysteresis(middleMcp, middlePip, middleTip, this.fingerWasExtended.middle),
+      ring: extendedWithHysteresis(ringMcp, ringPip, ringTip, this.fingerWasExtended.ring),
+      pinky: extendedWithHysteresis(pinkyMcp, pinkyPip, pinkyTip, this.fingerWasExtended.pinky),
     }
+    this.fingerWasExtended = fingers
 
     const angleDeg = (Math.atan2(middleMcp.y - wrist.y, middleMcp.x - wrist.x) * 180) / Math.PI
     if (this.anchorAngleDeg === null) this.anchorAngleDeg = angleDeg
@@ -302,7 +425,10 @@ export class WebcamGestureTracker {
     // way in — image space has Y increasing downward, but this value is
     // used everywhere downstream (debug, the feedback arrow, the actual
     // panView command) in standard math convention (Y up) — flipping once
-    // here means nothing later has to know about image-space quirks.
+    // here means nothing later has to know about image-space quirks. Note
+    // this is smoothing on top of already-filtered landmarks (belt and
+    // braces: the One-Euro filter smooths position, this smooths the
+    // derived direction, which has its own noise characteristics).
     const rawDx = indexTip.x - indexMcp.x
     const rawDy = -(indexTip.y - indexMcp.y)
     this.smoothedDx = this.smoothedDx === null ? rawDx : this.smoothedDx * (1 - ANGLE_SMOOTHING_FACTOR) + rawDx * ANGLE_SMOOTHING_FACTOR
@@ -317,37 +443,68 @@ export class WebcamGestureTracker {
       if (this.resizeAnchorY === null) this.resizeAnchorY = indexTip.y
     } else {
       this.resizeAnchorY = null
+      this.resizeLatched = null
     }
     // Positive = finger has moved up (toward the top of frame) from the
     // anchor, in image space smaller y = higher up, hence the flip here too.
     const resizeDeltaY = this.resizeAnchorY === null ? 0 : this.resizeAnchorY - indexTip.y
 
+    // Hysteresis on the resize deadzone: which threshold applies depends on
+    // whether a direction is already latched.
+    const resizeDeadzone = this.resizeLatched === null ? RESIZE_DEADZONE_ENTER : RESIZE_DEADZONE_EXIT
+    if (Math.abs(resizeDeltaY) < resizeDeadzone) {
+      this.resizeLatched = null
+    } else {
+      this.resizeLatched = resizeDeltaY > 0 ? 'increase' : 'decrease'
+    }
+
     const isMovePose = fingers.index && !fingers.middle && !fingers.ring && !fingers.pinky
-    this.handlers.onDebug?.({
+    const debugInfo: GestureDebugInfo = {
+      state: GestureState.Idle, // filled in below once classify() runs
       fingers,
       fingerCount: countExtended(fingers),
       rotateDeltaDeg,
       smoothedAngleDeg,
       moveAngleDeg: isMovePose ? smoothedAngleDeg : null,
-      resizeDirection: !inResizePose || Math.abs(resizeDeltaY) < RESIZE_DEADZONE ? null : resizeDeltaY > 0 ? 'increase' : 'decrease',
-    })
+      resizeDirection: inResizePose ? this.resizeLatched : null,
+    }
 
-    const classified = this.classify(fingers, rotateDeltaDeg, smoothedAngleDeg, resizeDeltaY)
+    const classified = this.classify(fingers, rotateDeltaDeg, smoothedAngleDeg, this.resizeLatched)
+    debugInfo.state = classified ? STATE_BY_GESTURE[classified.gesture] : GestureState.Idle
+    this.handlers.onDebug?.(debugInfo)
+
+    if (DEBUG_GESTURE_LOG && debugInfo.state !== this.loggedState) {
+      this.loggedState = debugInfo.state
+      // eslint-disable-next-line no-console
+      console.debug('[gesture] state ->', debugInfo.state, {
+        fingers,
+        rawIndexTip: rawHand[8],
+        filteredIndexTip: indexTip,
+        smoothedAngleDeg,
+        resizeDeltaY,
+      })
+    }
+
     this.emitDebounced(classified, time)
   }
 
   // Exact-match on which fingers are extended — not just a count — so an
   // unmapped combination (3 or 4 fingers) never accidentally reads as
   // "close enough" to a real pose.
-  private classify(fingers: FingerState, rotateDeltaDeg: number, moveAngleDeg: number, resizeDeltaY: number): Classified {
+  private classify(
+    fingers: FingerState,
+    rotateDeltaDeg: number,
+    moveAngleDeg: number,
+    resizeLatched: 'increase' | 'decrease' | null,
+  ): Classified {
     const { thumb, index, middle, ring, pinky } = fingers
 
     if (index && !middle && !ring && !pinky) {
       return { gesture: 'move', magnitude: MOVE_MAGNITUDE, angleDeg: moveAngleDeg }
     }
     if (index && middle && !ring && !pinky) {
-      if (Math.abs(resizeDeltaY) < RESIZE_DEADZONE) return null
-      return { gesture: resizeDeltaY > 0 ? 'resize_up' : 'resize_down', magnitude: RESIZE_STEP_MAGNITUDE }
+      if (resizeLatched === null) return null
+      return { gesture: resizeLatched === 'increase' ? 'resize_up' : 'resize_down', magnitude: RESIZE_STEP_MAGNITUDE }
     }
     if (thumb && index && middle && ring && pinky && Math.abs(rotateDeltaDeg) > ROTATE_DEAD_ZONE_DEG) {
       const excess = Math.abs(rotateDeltaDeg) - ROTATE_DEAD_ZONE_DEG

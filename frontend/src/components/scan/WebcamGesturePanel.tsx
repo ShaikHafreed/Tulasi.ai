@@ -263,6 +263,9 @@ export default function WebcamGesturePanel({
 
       {status === 'active' && (
         <div className="flex items-center justify-center gap-2 border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">
+          <span className={cn('font-medium uppercase', debug && debug.state !== 'idle' && 'text-primary')}>
+            {debug?.state ?? 'idle'}
+          </span>
           <span className="flex gap-1">
             {FINGER_ORDER.map((finger) => (
               <span
