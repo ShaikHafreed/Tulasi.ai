@@ -30,6 +30,18 @@ export interface PanTrigger {
 // firing reads as a smooth pan, not a fling across the viewport.
 const PAN_UNITS_PER_MAGNITUDE = 0.025
 
+// How much of the camera's actual visible frustum panning is allowed to use
+// before the model would start crossing the frame edge — a hair under 1 so
+// there's a visible margin, not a hard stop flush against the border. Real
+// footage showed a single held Move gesture pushing the model past the top
+// of the canvas within about a second (continuous per-frame firing with no
+// bound), where it then stayed clipped for the rest of the session with no
+// way back — this is what actually made "move in all directions" look
+// broken, not the direction math itself (atan2 already covers the full
+// circle). Clamping keeps every direction usable indefinitely instead of
+// each one being a one-shot trip toward getting stuck off-screen.
+const PAN_SAFETY_FACTOR = 0.85
+
 function Model({
   url,
   scale = 1,
@@ -55,6 +67,13 @@ function Model({
   const appliedPanNonce = useRef<number | null>(null)
   const snapshotTaken = useRef(false)
   const cameraFitted = useRef(false)
+  // Raw (unscaled) bounding-sphere radius and the fitted camera's visible
+  // half-width/half-height at the model's z=0 plane — captured once at fit
+  // time so the pan clamp can be recomputed against the model's CURRENT
+  // scale (gesture resize) without re-fitting the camera itself.
+  const boundingRadiusRaw = useRef(1)
+  const visibleHalfWidth = useRef(Infinity)
+  const visibleHalfHeight = useRef(Infinity)
 
   useEffect(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -86,6 +105,10 @@ function Model({
       camera.far = distance * 100
       camera.lookAt(0, 0, 0)
       camera.updateProjectionMatrix()
+
+      boundingRadiusRaw.current = sphere.radius || 1
+      visibleHalfHeight.current = distance * Math.tan(vFov / 2)
+      visibleHalfWidth.current = distance * Math.tan(hFov / 2)
     }
     invalidate()
 
@@ -133,10 +156,19 @@ function Model({
     // own image/sensor space, so this is pure trig, no axis-flip knowledge.
     const step = panTrigger.magnitude * PAN_UNITS_PER_MAGNITUDE
     const rad = (panTrigger.angleDeg * Math.PI) / 180
-    scene.position.x += Math.cos(rad) * step
-    scene.position.y += Math.sin(rad) * step
+
+    // Clamped to the camera's actual visible frustum, recomputed against the
+    // model's CURRENT scale (a gesture resize can grow/shrink it after the
+    // camera was fitted) — every direction stays usable instead of one push
+    // being enough to drift the model past the frame edge with no way back.
+    const effectiveRadius = boundingRadiusRaw.current * baseScale.current * scale
+    const boundX = Math.max((visibleHalfWidth.current - effectiveRadius) * PAN_SAFETY_FACTOR, 0)
+    const boundY = Math.max((visibleHalfHeight.current - effectiveRadius) * PAN_SAFETY_FACTOR, 0)
+
+    scene.position.x = THREE.MathUtils.clamp(scene.position.x + Math.cos(rad) * step, -boundX, boundX)
+    scene.position.y = THREE.MathUtils.clamp(scene.position.y + Math.sin(rad) * step, -boundY, boundY)
     invalidate()
-  }, [panTrigger, scene, invalidate])
+  }, [panTrigger, scene, invalidate, scale])
 
   useEffect(() => {
     scene.traverse((child) => {
