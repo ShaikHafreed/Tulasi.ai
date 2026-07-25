@@ -65,28 +65,45 @@ identifies the object(s) (Claude vision when credit exists; an honest OpenCV
 box guess with a *null* label in mock mode — never a faked label). The scan
 flow is Upload → **recognise/confirm/adjust** → crop → Generate.
 
-**Gestures (done, single-hand, finger-count scheme):** `lib/webcamGesture.ts`
+**Gestures (done, single-hand, finger-count scheme v3):** `lib/webcamGesture.ts`
 is `numHands=1`, ignores any second hand, skips low-confidence frames
 (handedness score < 0.5), and 150ms-debounces the classified gesture before
-firing. Both tracks (webcam + glove) read the SAME finger-count scheme —
-supersedes the earlier pinch/flat-hand-translate design, which is removed,
-not kept as a fallback:
-- 1 finger (index only) → Move, direction = where the finger points (webcam:
-  landmarks 5→8; glove: still IMU tilt — flex sensors carry no pointing data)
-- 2 fingers (index+middle) → Increase; 3 fingers (+ring) → Decrease — both
-  discrete **hold-repeat** steps (`lib/holdRepeat.ts`: one immediate step,
-  then a slower repeat every ~180ms while held past a 400ms delay, no
-  residual momentum on release) — not continuous magnitude-per-frame anymore
-- 5 fingers (open palm) + wrist twist → Rotate — unchanged continuous
-  behavior, just now gated behind the open-palm pose instead of "any
-  non-resize pose"
-- Any other combination (e.g. 4 fingers) is deliberately unmapped/neutral
+firing. Both tracks (webcam + glove) read the SAME scheme:
+- 1 finger (index only) → Move, **continuous 360°** in the exact direction
+  the finger points (webcam: landmarks 5→8; glove: `atan2(pitch, roll)` off
+  smoothed tilt) — no more 4-way snapping. The raw per-frame angle is
+  smoothed via EMA on the underlying **vector components** (dx/dy for
+  webcam, raw roll/pitch for glove), not the angle itself — smoothing angles
+  directly wraps incorrectly at the ±180° seam (179° and -179° average to
+  ~0°, the opposite direction); verified with synthetic noisy samples
+  (`ANGLE_SMOOTHING_FACTOR` webcam-side, `TILT_SMOOTHING_FACTOR`
+  firmware-side, both tune-by-feel).
+- 2 fingers (index+middle) → Resize, both directions from ONE pose now (the
+  old 3-finger decrease pose is deleted, not dormant): a vertical anchor is
+  captured the instant the pose is entered (webcam: index fingertip y;
+  glove: pitch), and position relative to that anchor drives continuous
+  increase (above) or decrease (below), with a small deadzone at the anchor.
+  Fires via `lib/holdRepeat.ts`'s new `immediateRepeat` mode — steady rate
+  from the moment the deadzone clears, no initial-delay pause (unlike the
+  old instant-step-then-arrow-key-repeat cadence, which no other gesture
+  uses anymore).
+- 5 fingers (open palm) + wrist twist → Rotate — unchanged, continuous.
+- Any other combination (e.g. 3 or 4 fingers) is deliberately unmapped/neutral.
+- `components/gesture/GestureDirectionArrow` — small dotted-line SVG arrow
+  (move) or up/down chevron (resize), rendered inside `WebcamGesturePanel`,
+  visible only while the matching pose is held. Draws the exact same
+  angle/direction driving the real `panView`/resize command, not a separate
+  approximation.
 - Webcam: per-finger extended/curled from landmark tip-vs-PIP distance from
   the wrist, hand-size-normalized (`EXTENDED_MARGIN_RATIO`); thumb judged by
   tip-to-index-MCP spread. Glove: per-finger curled/extended directly from
   each calibrated flex channel (`FLEX_CURL_THRESHOLD` in
-  `firmware/src/gestures.cpp`) — same named-constant, held-pose, debounced
-  design as before, just per-finger instead of a whole-hand mean.
+  `firmware/src/gestures.cpp`).
+- BLE wire payload: `gesture:u8, angleDeg:f32, magnitude:f32, signedDelta:f32,
+  timestamp:u32` (17 bytes) — `angleDeg` replaced the old `direction:u8`
+  4-way enum. Firmware changes here are unverified against real hardware (no
+  physical glove built yet) and have no PlatformIO toolchain in this
+  environment to compile-check — review before flashing.
 
 Unified `components/gesture/GestureStatusIndicator` (off / webcam-active /
 glove-linked) lives in the nav, wired to the real persisted toggles.
