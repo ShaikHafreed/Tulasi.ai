@@ -29,6 +29,7 @@ export interface GestureDebugInfo {
   fingers: { thumb: boolean; index: boolean; middle: boolean; ring: boolean; pinky: boolean }
   fingerCount: number
   rotateDeltaDeg: number
+  smoothedAngleDeg: number | null
 }
 
 // SINGLE HAND ONLY. We track exactly one hand (the most-confident one) and
@@ -65,6 +66,15 @@ const DEBOUNCE_MS = 150
 // up/down, so it's judged by tip-to-index-MCP spread instead.
 const EXTENDED_MARGIN_RATIO = 0.15
 const THUMB_SPREAD_RATIO = 0.55
+
+// Exponential moving average applied to the index-finger pointing VECTOR
+// (dx, dy), not the angle directly — averaging angles naively wraps
+// incorrectly at the ±180° seam (179° and -179° are nearly the same
+// direction but average to ~0°, the opposite direction). Smoothing the
+// vector components (each a plain continuous number, no wraparound) and
+// taking atan2 of the result once at the end avoids that entirely.
+// Weight on the NEW sample each frame — tune by feel.
+const ANGLE_SMOOTHING_FACTOR = 0.3
 
 const ROTATE_DEAD_ZONE_DEG = 10
 const ROTATE_STEP_DEGREES_PER_FRAME = 4
@@ -156,6 +166,13 @@ export class WebcamGestureTracker {
   // Rotate's wrist-angle joystick center. Re-centers whenever the hand is lost.
   private anchorAngleDeg: number | null = null
 
+  // Smoothed index-finger pointing vector (see ANGLE_SMOOTHING_FACTOR).
+  // Updated on every tracked frame regardless of current pose, so it's
+  // already warmed up by the time a 1-finger move pose starts — resetting
+  // it only on pose-entry would mean visible lag for the first few frames.
+  private smoothedDx: number | null = null
+  private smoothedDy: number | null = null
+
   // Debounce state for the classified gesture type (+ direction, so a move
   // that changes direction re-debounces rather than instantly snapping).
   private candidateKey: string | null = null
@@ -197,6 +214,8 @@ export class WebcamGestureTracker {
 
   private resetTracking(): void {
     this.anchorAngleDeg = null
+    this.smoothedDx = null
+    this.smoothedDy = null
     this.candidateKey = null
     this.activeKey = null
     this.holdRepeat.stop()
@@ -251,7 +270,17 @@ export class WebcamGestureTracker {
     if (rotateDeltaDeg > 180) rotateDeltaDeg -= 360
     if (rotateDeltaDeg < -180) rotateDeltaDeg += 360
 
-    this.handlers.onDebug?.({ fingers, fingerCount: countExtended(fingers), rotateDeltaDeg })
+    // Smooth the index-finger pointing vector (see ANGLE_SMOOTHING_FACTOR's
+    // comment on why the vector, not the raw angle). Not yet consumed by
+    // classify() — Part 1 is the smoothing signal itself, verified live via
+    // the debug readout; Part 2 wires it into actual continuous panning.
+    const rawDx = indexTip.x - indexMcp.x
+    const rawDy = indexTip.y - indexMcp.y
+    this.smoothedDx = this.smoothedDx === null ? rawDx : this.smoothedDx * (1 - ANGLE_SMOOTHING_FACTOR) + rawDx * ANGLE_SMOOTHING_FACTOR
+    this.smoothedDy = this.smoothedDy === null ? rawDy : this.smoothedDy * (1 - ANGLE_SMOOTHING_FACTOR) + rawDy * ANGLE_SMOOTHING_FACTOR
+    const smoothedAngleDeg = (Math.atan2(this.smoothedDy, this.smoothedDx) * 180) / Math.PI
+
+    this.handlers.onDebug?.({ fingers, fingerCount: countExtended(fingers), rotateDeltaDeg, smoothedAngleDeg })
 
     const classified = this.classify(fingers, indexMcp, indexTip, rotateDeltaDeg)
     this.emitDebounced(classified, time)

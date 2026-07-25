@@ -265,6 +265,7 @@ export default function WebcamGesturePanel({
           </span>
           <span>{debug ? debug.fingerCount : 0} up</span>
           <span>tilt {debug ? debug.rotateDeltaDeg.toFixed(0) : '—'}°</span>
+          <span>point {debug?.smoothedAngleDeg != null ? debug.smoothedAngleDeg.toFixed(0) : '—'}°</span>
         </div>
       )}
     </div>
