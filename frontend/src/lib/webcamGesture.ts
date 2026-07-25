@@ -117,19 +117,19 @@ const DEBOUNCE_MS = 150
 // there's a real dead band between the two, not just one shared cutoff.
 const EXTENDED_MARGIN_RATIO_ENTER = 0.15
 const EXTENDED_MARGIN_RATIO_EXIT = 0.08
-const PIP_STRAIGHT_ANGLE_ENTER_DEG = 160
-const PIP_STRAIGHT_ANGLE_EXIT_DEG = 145
+// A perfectly straight finger only measures ~180° in the 2D-projected PIP
+// angle when it's held flat and parallel to the camera. At any natural
+// gesture angle (fingers tilted toward/away from the camera at all — the
+// normal way people hold a hand up to a webcam), perspective foreshortening
+// pushes the projected angle well below that even for a genuinely straight
+// finger. 160°/145° was calibrated for the flat-on case and left every other
+// finger reading as permanently curled in practice — loosened substantially;
+// a real curl still bends the PIP much sharper than this (typically well
+// under 100°), so this still separates curled from extended cleanly.
+const PIP_STRAIGHT_ANGLE_ENTER_DEG = 120
+const PIP_STRAIGHT_ANGLE_EXIT_DEG = 100
 const THUMB_SPREAD_RATIO_ENTER = 0.55
 const THUMB_SPREAD_RATIO_EXIT = 0.4
-
-// Exponential moving average applied to the index-finger pointing VECTOR
-// (dx, dy), not the angle directly — averaging angles naively wraps
-// incorrectly at the ±180° seam (179° and -179° are nearly the same
-// direction but average to ~0°, the opposite direction). Smoothing the
-// vector components (each a plain continuous number, no wraparound) and
-// taking atan2 of the result once at the end avoids that entirely.
-// Weight on the NEW sample each frame — tune by feel.
-const ANGLE_SMOOTHING_FACTOR = 0.3
 
 const ROTATE_DEAD_ZONE_DEG = 10
 const ROTATE_STEP_DEGREES_PER_FRAME = 4
@@ -281,13 +281,6 @@ export class WebcamGestureTracker {
   // Rotate's wrist-angle joystick center. Re-centers whenever the hand is lost.
   private anchorAngleDeg: number | null = null
 
-  // Smoothed index-finger pointing vector (see ANGLE_SMOOTHING_FACTOR).
-  // Updated on every tracked frame regardless of current pose, so it's
-  // already warmed up by the time a 1-finger move pose starts — resetting
-  // it only on pose-entry would mean visible lag for the first few frames.
-  private smoothedDx: number | null = null
-  private smoothedDy: number | null = null
-
   // Resize's vertical joystick anchor — captured fresh each time the
   // 2-finger pose is entered (cleared whenever it isn't held), per Part 4.
   private resizeAnchorY: number | null = null
@@ -343,8 +336,6 @@ export class WebcamGestureTracker {
     this.landmarkFilter.reset()
     this.fingerWasExtended = { thumb: false, index: false, middle: false, ring: false, pinky: false }
     this.anchorAngleDeg = null
-    this.smoothedDx = null
-    this.smoothedDy = null
     this.resizeAnchorY = null
     this.resizeLatched = null
     this.candidateKey = null
@@ -420,20 +411,21 @@ export class WebcamGestureTracker {
     if (rotateDeltaDeg > 180) rotateDeltaDeg -= 360
     if (rotateDeltaDeg < -180) rotateDeltaDeg += 360
 
-    // Smooth the index-finger pointing vector (see ANGLE_SMOOTHING_FACTOR's
-    // comment on why the vector, not the raw angle). dy is negated on the
-    // way in — image space has Y increasing downward, but this value is
-    // used everywhere downstream (debug, the feedback arrow, the actual
-    // panView command) in standard math convention (Y up) — flipping once
-    // here means nothing later has to know about image-space quirks. Note
-    // this is smoothing on top of already-filtered landmarks (belt and
-    // braces: the One-Euro filter smooths position, this smooths the
-    // derived direction, which has its own noise characteristics).
-    const rawDx = indexTip.x - indexMcp.x
-    const rawDy = -(indexTip.y - indexMcp.y)
-    this.smoothedDx = this.smoothedDx === null ? rawDx : this.smoothedDx * (1 - ANGLE_SMOOTHING_FACTOR) + rawDx * ANGLE_SMOOTHING_FACTOR
-    this.smoothedDy = this.smoothedDy === null ? rawDy : this.smoothedDy * (1 - ANGLE_SMOOTHING_FACTOR) + rawDy * ANGLE_SMOOTHING_FACTOR
-    const smoothedAngleDeg = (Math.atan2(this.smoothedDy, this.smoothedDx) * 180) / Math.PI
+    // Index-finger pointing vector, computed directly from the ALREADY
+    // One-Euro-filtered landmarks — no second smoothing pass on top. A
+    // fixed-rate EMA layered on top of the (already adaptively-smoothed)
+    // filtered positions was cascading two low-pass filters, which compounds
+    // lag; the visible symptom was move direction feeling "stuck" rather
+    // than tracking the finger live. The One-Euro filter alone already does
+    // the adaptive heavy-smoothing-when-still / light-when-moving-fast job
+    // this was meant for. dy is negated on the way in — image space has Y
+    // increasing downward, but this value is used everywhere downstream
+    // (debug, the feedback arrow, the actual panView command) in standard
+    // math convention (Y up) — flipping once here means nothing later has
+    // to know about image-space quirks.
+    const dx = indexTip.x - indexMcp.x
+    const dy = -(indexTip.y - indexMcp.y)
+    const smoothedAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI
 
     // Resize's vertical anchor — captured the first frame the 2-finger pose
     // is seen, cleared the instant it isn't (so re-entering always recenters
