@@ -61,6 +61,7 @@ import {
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 import { MAX_ASPECT_FOR_STABILITY, MIN_PRINTABLE_MM, printCheck } from '../lib/printCheck'
 import { dateRangeToDays, getLibraryPrefs, setLibraryPrefs, type DateRangeFilter, type LibrarySort, type MeasuredFilter } from '../lib/libraryPrefs'
+import { notifyGenerationComplete, requestNotificationPermission } from '../lib/notifications'
 
 const POLL_INTERVAL_MS = 1500
 
@@ -844,6 +845,7 @@ function RegenerateDialog({
 
   async function start(files: File[]) {
     setPhase('uploading')
+    void requestNotificationPermission()
     try {
       await regenerateScan(scan.job_id, files)
       setPhase('polling')
@@ -854,6 +856,7 @@ function RegenerateDialog({
           if (record.status === 'succeeded') {
             if (pollHandle.current !== null) clearInterval(pollHandle.current)
             toast.success('Regenerated')
+            notifyGenerationComplete(scan.object_name)
             onDone()
             onOpenChange(false)
           } else if (record.status === 'failed') {
@@ -1083,6 +1086,7 @@ function ScanView({
             clearInterval(pollHandle.current!)
             setPhase('done')
             toast.success('Scan saved to your library')
+            notifyGenerationComplete()
             onScanSaved()
           } else if (record.status === 'failed') {
             clearInterval(pollHandle.current!)
@@ -1161,6 +1165,10 @@ function ScanView({
       thumbnailUploaded.current = false
       sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY)
       pushEvent('scan_started', { file_name: files[0].name, photo_count: files.length })
+
+      // Fire-and-forget — the permission prompt (only shown once; a no-op if
+      // already granted/denied) shouldn't hold up the actual upload.
+      void requestNotificationPermission()
 
       try {
         const { job_id: newJobId } = await uploadImages(files)
