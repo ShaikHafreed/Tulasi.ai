@@ -86,6 +86,35 @@ def insert_assistant_feedback(access_token: str, *, message: str, rating: str) -
     ).execute()
 
 
+def update_scan_generation(
+    access_token: str,
+    *,
+    job_id: str,
+    model_url: str,
+    image_url: str | None,
+    source_image_url: str | None,
+    width_mm: float | None,
+    height_mm: float | None,
+    depth_mm: float | None,
+    depth_estimated: bool,
+) -> None:
+    # Regenerate path — updates the SAME row in place (by job_id) rather than
+    # inserting a new one, so the Library shows one updated entry, not a
+    # duplicate. Owner-scoped via the caller's JWT (RLS), same as rename/delete.
+    client = _client_as(access_token)
+    client.table("scans").update(
+        {
+            "model_url": model_url,
+            "image_url": image_url,
+            "source_image_url": source_image_url,
+            "width_mm": width_mm,
+            "height_mm": height_mm,
+            "depth_mm": depth_mm,
+            "depth_estimated": depth_estimated,
+        }
+    ).eq("job_id", job_id).execute()
+
+
 def update_scan_image(access_token: str, *, job_id: str, image_url: str) -> None:
     client = _client_as(access_token)
     client.table("scans").update({"image_url": image_url}).eq("job_id", job_id).execute()

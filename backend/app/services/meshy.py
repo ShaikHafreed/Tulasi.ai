@@ -168,7 +168,9 @@ async def _run_real(job_id: str, images: list[tuple[bytes, str]]) -> None:
     raise TimeoutError("Meshy job timed out")
 
 
-async def process_job(job_id: str, images: list[tuple[bytes, str]], access_token: str | None) -> None:
+async def process_job(
+    job_id: str, images: list[tuple[bytes, str]], access_token: str | None, *, regenerate: bool = False
+) -> None:
     try:
         if _mock_enabled():
             # Mock ignores the image count entirely — it just serves the
@@ -208,20 +210,35 @@ async def process_job(job_id: str, images: list[tuple[bytes, str]], access_token
         if record and record.model_url:
             dimensions = record.dimensions
             try:
-                supabase_client.insert_scan(
-                    access_token,
-                    job_id=job_id,
-                    model_url=record.model_url,
-                    image_url=record.image_url,
-                    # At insert time record.image_url is still the source photo
-                    # (the thumbnail render overwrites image_url later) — keep a
-                    # permanent copy of it for the before/after slider.
-                    source_image_url=record.image_url,
-                    width_mm=dimensions.width_mm if dimensions else None,
-                    height_mm=dimensions.height_mm if dimensions else None,
-                    depth_mm=dimensions.depth_mm if dimensions else None,
-                    depth_estimated=dimensions.depth_estimated if dimensions else True,
-                )
+                if regenerate:
+                    # Same job_id as the original scan — update its existing
+                    # row in place instead of inserting a duplicate.
+                    supabase_client.update_scan_generation(
+                        access_token,
+                        job_id=job_id,
+                        model_url=record.model_url,
+                        image_url=record.image_url,
+                        source_image_url=record.image_url,
+                        width_mm=dimensions.width_mm if dimensions else None,
+                        height_mm=dimensions.height_mm if dimensions else None,
+                        depth_mm=dimensions.depth_mm if dimensions else None,
+                        depth_estimated=dimensions.depth_estimated if dimensions else True,
+                    )
+                else:
+                    supabase_client.insert_scan(
+                        access_token,
+                        job_id=job_id,
+                        model_url=record.model_url,
+                        image_url=record.image_url,
+                        # At insert time record.image_url is still the source photo
+                        # (the thumbnail render overwrites image_url later) — keep a
+                        # permanent copy of it for the before/after slider.
+                        source_image_url=record.image_url,
+                        width_mm=dimensions.width_mm if dimensions else None,
+                        height_mm=dimensions.height_mm if dimensions else None,
+                        depth_mm=dimensions.depth_mm if dimensions else None,
+                        depth_estimated=dimensions.depth_estimated if dimensions else True,
+                    )
             except Exception:
                 # Scan-history write failing shouldn't hide a model that generated fine.
                 logger.exception("scan history write failed for job %s", job_id)

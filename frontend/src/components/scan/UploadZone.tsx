@@ -16,10 +16,15 @@ export default function UploadZone({
   onFilesSelected,
   onValidationError,
   disabled,
+  actionLabel = 'Generate 3D model',
 }: {
   onFilesSelected: (files: File[]) => void
   onValidationError: (message: string) => void
   disabled?: boolean
+  // Lets callers reuse this zone outside the "brand-new scan" flow (e.g.
+  // regenerate-in-place) with copy that matches — the count suffix stays
+  // fixed, only the verb changes.
+  actionLabel?: string
 }) {
   const [files, setFiles] = useState<(File | null)[]>([null, null, null, null])
   const [previews, setPreviews] = useState<(string | null)[]>([null, null, null, null])
@@ -175,7 +180,7 @@ export default function UploadZone({
 
       <Button type="button" variant="warm" disabled={chosen.length === 0} onClick={() => onFilesSelected(chosen)} className="w-fit">
         <Upload size={15} />
-        Generate 3D model ({chosen.length}/4)
+        {actionLabel} ({chosen.length}/4)
       </Button>
     </div>
   )

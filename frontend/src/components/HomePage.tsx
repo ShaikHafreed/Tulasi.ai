@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { toast } from 'sonner'
-import { Check, Download, MoreVertical, Pencil, Share2, Trash2 } from 'lucide-react'
+import { Check, Download, MoreVertical, Pencil, RefreshCw, Share2, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import { type GestureMode } from './gesture/GestureStatusIndicator'
 import { Readout, SectionHeader } from './tulasi/Readout'
@@ -38,6 +38,7 @@ import {
   estimateScan,
   exportScan,
   getJobStatus,
+  regenerateScan,
   renameScan,
   uploadImages,
   uploadThumbnail,
@@ -245,6 +246,7 @@ function LibraryView({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [renaming, setRenaming] = useState(false)
+  const [regenerateTarget, setRegenerateTarget] = useState<Scan | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
@@ -634,6 +636,9 @@ function LibraryView({
                       <DropdownMenuItem onClick={() => startRename(scan)}>
                         <Pencil size={13} /> Rename
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setRegenerateTarget(scan)}>
+                        <RefreshCw size={13} /> Regenerate
+                      </DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(scan)}>
                         <Trash2 size={13} /> Delete
                       </DropdownMenuItem>
@@ -696,6 +701,16 @@ function LibraryView({
         busy={deleting}
         onConfirm={confirmDelete}
       />
+
+      {regenerateTarget && (
+        <RegenerateDialog
+          key={regenerateTarget.id}
+          scan={regenerateTarget}
+          open={!!regenerateTarget}
+          onOpenChange={(open) => !open && setRegenerateTarget(null)}
+          onDone={onScanDeleted}
+        />
+      )}
 
       <ConfirmModal
         open={bulkDeleteOpen}
@@ -790,6 +805,89 @@ function ShareControl({ jobId, initialSlug }: { jobId: string; initialSlug: stri
         </div>
       )}
     </div>
+  )
+}
+
+// Re-run generation/calibration for an EXISTING scan (poor result, no
+// reference detected, or the user just wants another try) — updates that
+// scan's own row in place (see regenerateScan / the backend's regenerate
+// route) rather than creating a duplicate Library entry.
+function RegenerateDialog({
+  scan,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  scan: Scan
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDone: () => void
+}) {
+  const [phase, setPhase] = useState<'idle' | 'uploading' | 'polling' | 'error'>('idle')
+  const [job, setJob] = useState<JobRecord | null>(null)
+  const pollHandle = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setPhase('idle')
+      setJob(null)
+      if (pollHandle.current !== null) clearInterval(pollHandle.current)
+    }
+  }, [open])
+
+  useEffect(
+    () => () => {
+      if (pollHandle.current !== null) clearInterval(pollHandle.current)
+    },
+    [],
+  )
+
+  async function start(files: File[]) {
+    setPhase('uploading')
+    try {
+      await regenerateScan(scan.job_id, files)
+      setPhase('polling')
+      pollHandle.current = window.setInterval(async () => {
+        try {
+          const record = await getJobStatus(scan.job_id)
+          setJob(record)
+          if (record.status === 'succeeded') {
+            if (pollHandle.current !== null) clearInterval(pollHandle.current)
+            toast.success('Regenerated')
+            onDone()
+            onOpenChange(false)
+          } else if (record.status === 'failed') {
+            if (pollHandle.current !== null) clearInterval(pollHandle.current)
+            setPhase('error')
+          }
+        } catch {
+          // Transient poll failure — try again next tick rather than bailing.
+        }
+      }, POLL_INTERVAL_MS)
+    } catch {
+      toast.error("Couldn't start regeneration — try again.")
+      setPhase('error')
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md p-6">
+        <DialogTitle>Regenerate {scan.object_name ?? scan.job_id}</DialogTitle>
+        {(phase === 'idle' || phase === 'error') && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Upload a clearer photo, or one with a reference object (a coin or card) if the last one missed it —
+              this replaces the model and measurements on this same scan, not a new one.
+            </p>
+            <UploadZone actionLabel="Regenerate" onFilesSelected={start} onValidationError={(msg) => toast.error(msg)} />
+            {phase === 'error' && <p className="text-xs text-brand-coral">Regeneration failed — try again.</p>}
+          </div>
+        )}
+        {phase === 'uploading' && <p className="text-sm text-muted-foreground">Uploading…</p>}
+        {phase === 'polling' && job && <ProgressStages job={job} />}
+      </DialogContent>
+    </Dialog>
   )
 }
 

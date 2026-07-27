@@ -34,13 +34,18 @@ async def detect_subject(image: UploadFile = File(...)) -> SubjectBox:
     return SubjectBox(**box)
 
 
-@router.post("/generate", status_code=202, response_model=GenerateAccepted)
-async def generate(
-    # Accept 1–4 photos under the "images" field. The first photo is the
-    # primary — it drives calibration, the source thumbnail, and the
-    # before/after slider; extras improve Meshy's multi-view geometry.
-    images: list[UploadFile] = File(...),
-    authorization: str | None = Header(default=None),
+# Shared by both a fresh scan (POST /api/generate, regenerate=False, fresh
+# uuid4 job_id) and a regenerate-in-place (POST /api/scans/{id}/regenerate,
+# regenerate=True, the EXISTING job_id reused) — the upload/validate/
+# calibrate/kick-off-Meshy steps are identical either way; only what happens
+# to the Supabase row at the end (insert vs. update, see meshy.process_job)
+# differs.
+async def run_generation(
+    job_id: str,
+    images: list[UploadFile],
+    authorization: str | None,
+    *,
+    regenerate: bool,
 ) -> GenerateAccepted:
     if not images:
         raise AppError(
@@ -64,12 +69,12 @@ async def generate(
         validate_size(len(data))
         loaded.append((data, image.content_type))
 
-    job_id = uuid.uuid4().hex
     job_store.create(job_id)
 
     meshy.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     # First image is the primary source (photo shown in the slider / thumbnail
-    # basis); the rest are kept for future calibration/reference use.
+    # basis); the rest are kept for future calibration/reference use. On a
+    # regenerate this overwrites the same scan's existing storage files.
     for index, (data, content_type) in enumerate(loaded):
         ext = _EXTENSION_BY_CONTENT_TYPE[content_type]
         suffix = "_source" if index == 0 else f"_source{index + 1}"
@@ -85,8 +90,20 @@ async def generate(
         pass  # unreadable image for CV purposes — Meshy may still handle it
 
     access_token = bearer_token(authorization)
-    task = asyncio.create_task(meshy.process_job(job_id, loaded, access_token))
+    task = asyncio.create_task(meshy.process_job(job_id, loaded, access_token, regenerate=regenerate))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
     return GenerateAccepted(job_id=job_id)
+
+
+@router.post("/generate", status_code=202, response_model=GenerateAccepted)
+async def generate(
+    # Accept 1–4 photos under the "images" field. The first photo is the
+    # primary — it drives calibration, the source thumbnail, and the
+    # before/after slider; extras improve Meshy's multi-view geometry.
+    images: list[UploadFile] = File(...),
+    authorization: str | None = Header(default=None),
+) -> GenerateAccepted:
+    job_id = uuid.uuid4().hex
+    return await run_generation(job_id, images, authorization, regenerate=False)

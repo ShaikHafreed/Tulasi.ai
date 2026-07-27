@@ -81,6 +81,25 @@ export async function uploadImages(files: File[]): Promise<GenerateAccepted> {
   return response.json()
 }
 
+// Re-run generation/calibration against an EXISTING scan's job_id — the
+// backend updates that scan's row in place rather than inserting a new one.
+export async function regenerateScan(jobId: string, files: File[]): Promise<GenerateAccepted> {
+  const formData = new FormData()
+  for (const file of files) formData.append('images', file)
+
+  const response = await fetch(`/api/scans/${jobId}/regenerate`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: formData,
+  })
+
+  if (!response.ok) {
+    await parseErrorOrThrow(response)
+  }
+
+  return response.json()
+}
+
 export async function getJobStatus(jobId: string): Promise<JobRecord> {
   const response = await fetch(`/api/jobs/${jobId}`)
 

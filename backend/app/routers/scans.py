@@ -4,10 +4,11 @@ from fastapi import APIRouter, File, Header, Response, UploadFile
 
 from .. import supabase_client
 from ..errors import AppError
-from ..models.schemas import EstimateRequest, EstimateResponse, ExportRequest, RenameScanRequest
+from ..models.schemas import EstimateRequest, EstimateResponse, ExportRequest, GenerateAccepted, RenameScanRequest
 from ..services import estimate, exporter
 from ..services.meshy import STORAGE_DIR
 from ..services.uploads import validate_content_type, validate_size
+from .generate import run_generation
 
 logger = logging.getLogger("tulasi.scans")
 
@@ -48,6 +49,22 @@ async def upload_thumbnail(
         # The thumbnail file is saved either way — a stale Library row until
         # next refresh isn't worth failing the request over.
         logger.exception("scan image update failed for job %s", job_id)
+
+
+@router.post("/{job_id}/regenerate", status_code=202, response_model=GenerateAccepted)
+async def regenerate_scan(
+    job_id: str,
+    # Same "images" contract as POST /api/generate — re-upload a clearer
+    # photo, or one that finally includes a reference object, and re-run
+    # generation/calibration against THIS scan's row rather than creating a
+    # new one.
+    images: list[UploadFile] = File(...),
+    authorization: str | None = Header(default=None),
+) -> GenerateAccepted:
+    # Regenerating updates an existing owned row, unlike a fresh scan (which
+    # tolerates anonymous use) — always require auth here.
+    _require_access_token(authorization)
+    return await run_generation(job_id, images, authorization, regenerate=True)
 
 
 @router.patch("/{job_id}", status_code=204)
