@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { Download, MoreVertical, Pencil, Share2, Trash2 } from 'lucide-react'
@@ -59,6 +59,7 @@ import {
 } from '../lib/gesturePreference'
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 import { MAX_ASPECT_FOR_STABILITY, MIN_PRINTABLE_MM, printCheck } from '../lib/printCheck'
+import { dateRangeToDays, getLibraryPrefs, setLibraryPrefs, type DateRangeFilter, type LibrarySort, type MeasuredFilter } from '../lib/libraryPrefs'
 
 const POLL_INTERVAL_MS = 1500
 
@@ -245,9 +246,46 @@ function LibraryView({
   const [renameValue, setRenameValue] = useState('')
   const [renaming, setRenaming] = useState(false)
 
-  const filtered = scans.filter((s) =>
-    `${s.object_name ?? ''} ${s.job_id}`.toLowerCase().includes(query.toLowerCase()),
-  )
+  // Sort/filter choice persists across visits (last-used, not per-scan) —
+  // loaded lazily so it's read once, not on every render.
+  const [prefs, setPrefs] = useState(getLibraryPrefs)
+  const { sort, measuredFilter, dateRange } = prefs
+
+  function updatePrefs(patch: Partial<typeof prefs>) {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch }
+      setLibraryPrefs(next)
+      return next
+    })
+  }
+
+  const maxDimMm = (s: Scan) => Math.max(s.width_mm ?? 0, s.height_mm ?? 0, s.depth_mm ?? 0)
+
+  const filtered = useMemo(() => {
+    const days = dateRangeToDays(dateRange)
+    const cutoff = days !== null ? Date.now() - days * 24 * 60 * 60 * 1000 : null
+
+    return scans
+      .filter((s) => `${s.object_name ?? ''} ${s.job_id}`.toLowerCase().includes(query.toLowerCase()))
+      .filter((s) => {
+        if (measuredFilter === 'all') return true
+        return measuredFilter === 'measured' ? !s.depth_estimated : s.depth_estimated
+      })
+      .filter((s) => cutoff === null || new Date(s.created_at).getTime() >= cutoff)
+      .sort((a, b) => {
+        switch (sort) {
+          case 'oldest':
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          case 'name':
+            return (a.object_name ?? a.job_id).localeCompare(b.object_name ?? b.job_id)
+          case 'size':
+            return maxDimMm(b) - maxDimMm(a)
+          case 'newest':
+          default:
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }
+      })
+  }, [scans, query, measuredFilter, dateRange, sort])
 
   async function confirmDelete() {
     if (!deleteTarget) return
@@ -317,6 +355,52 @@ function LibraryView({
         }
       />
 
+      {!loading && scans.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 border-b border-border/60 pb-4 font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <label className="flex items-center gap-1.5">
+            sort
+            <select
+              value={sort}
+              onChange={(e) => updatePrefs({ sort: e.target.value as LibrarySort })}
+              className="h-8 border border-border bg-transparent px-2 normal-case text-foreground focus:border-teal focus:outline-none"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name">Name</option>
+              <option value="size">Size</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            show
+            <select
+              value={measuredFilter}
+              onChange={(e) => updatePrefs({ measuredFilter: e.target.value as MeasuredFilter })}
+              className="h-8 border border-border bg-transparent px-2 normal-case text-foreground focus:border-teal focus:outline-none"
+            >
+              <option value="all">All</option>
+              <option value="measured">Measured</option>
+              <option value="estimated">Estimated</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            from
+            <select
+              value={dateRange}
+              onChange={(e) => updatePrefs({ dateRange: e.target.value as DateRangeFilter })}
+              className="h-8 border border-border bg-transparent px-2 normal-case text-foreground focus:border-teal focus:outline-none"
+            >
+              <option value="all">All time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+            </select>
+          </label>
+          <span className="ml-auto normal-case text-muted-foreground/70">
+            {filtered.length} of {scans.length}
+          </span>
+        </div>
+      )}
+
       {loading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <SkeletonCard />
@@ -347,7 +431,9 @@ function LibraryView({
       )}
 
       {!loading && scans.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground">No objects match “{query}”.</p>
+        <p className="text-sm text-muted-foreground">
+          {query ? `No objects match "${query}".` : 'No objects match the current filters.'}
+        </p>
       )}
 
       {filtered.length > 0 && (
