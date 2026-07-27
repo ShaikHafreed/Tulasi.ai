@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { toast } from 'sonner'
-import { Download, MoreVertical, Pencil, Share2, Trash2 } from 'lucide-react'
+import { Check, Download, MoreVertical, Pencil, Share2, Trash2 } from 'lucide-react'
 import Sidebar, { type DashboardView } from './Sidebar'
 import { type GestureMode } from './gesture/GestureStatusIndicator'
 import { Readout, SectionHeader } from './tulasi/Readout'
@@ -245,6 +245,10 @@ function LibraryView({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [renaming, setRenaming] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   // Sort/filter choice persists across visits (last-used, not per-scan) —
   // loaded lazily so it's read once, not on every render.
@@ -302,6 +306,65 @@ function LibraryView({
     }
   }
 
+  // selectedIds is keyed by scan.id (not array index) throughout, same as
+  // rename/delete/share already are — refreshScans() re-fetches the real
+  // list by content after a bulk op, so there's no stale-index mismatch: any
+  // id no longer present just silently drops out of the (also id-keyed)
+  // selection.
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  const selectedScans = scans.filter((s) => selectedIds.has(s.id))
+
+  async function confirmBulkDelete() {
+    if (selectedScans.length === 0) return
+    setBulkBusy(true)
+    const results = await Promise.allSettled(selectedScans.map((s) => deleteScan(s.job_id)))
+    const failures = results.filter((r) => r.status === 'rejected').length
+    if (failures === 0) toast.success(`${selectedScans.length} scans deleted`)
+    else toast.error(`Deleted ${selectedScans.length - failures} of ${selectedScans.length} — ${failures} failed`)
+    onScanDeleted()
+    setBulkBusy(false)
+    setBulkDeleteOpen(false)
+    exitSelectMode()
+  }
+
+  // Zip would need a client-side zip library (new dependency) or a backend
+  // endpoint to bundle multiple GLBs — out of scope for this pass. Sequential
+  // individual downloads instead: simpler, no new dependency, works today.
+  // Browsers may prompt to allow "multiple downloads" from one page after a
+  // few in a row — an accepted limitation of this approach vs. a real zip.
+  async function bulkExport() {
+    const exportable = selectedScans.filter((s) => s.model_url && s.width_mm && s.height_mm && s.depth_mm)
+    if (exportable.length === 0) {
+      toast.error('None of the selected scans have measured dimensions to export.')
+      return
+    }
+    setBulkBusy(true)
+    let failures = 0
+    for (const s of exportable) {
+      try {
+        await exportScan(s.job_id, 'glb', { width_mm: s.width_mm!, height_mm: s.height_mm!, depth_mm: s.depth_mm! })
+      } catch {
+        failures += 1
+      }
+    }
+    if (failures === 0) toast.success(`Exported ${exportable.length} models`)
+    else toast.error(`Exported ${exportable.length - failures} of ${exportable.length} — ${failures} failed`)
+    setBulkBusy(false)
+  }
+
   function startRename(scan: Scan) {
     setRenamingId(scan.id)
     setRenameValue(scan.object_name ?? '')
@@ -344,6 +407,17 @@ function LibraryView({
               placeholder="search · name / id"
               className="h-9 w-56 border border-border bg-transparent px-3 font-mono text-xs placeholder:text-muted-foreground/60 focus:border-teal focus:outline-none"
             />
+            {scans.length > 0 && (
+              <button
+                type="button"
+                onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                className={`flex h-9 items-center border px-3 font-mono text-[10px] tracking-[0.3em] uppercase ${
+                  selectMode ? 'border-teal bg-teal/10 text-teal' : 'border-border text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {selectMode ? 'cancel' : 'select'}
+              </button>
+            )}
             <button
               type="button"
               onClick={onGoToScan}
@@ -354,6 +428,35 @@ function LibraryView({
           </div>
         }
       />
+
+      {selectMode && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-teal/30 bg-teal/5 px-3 py-2.5 font-mono text-[10px] tracking-[0.12em] uppercase">
+          <span className="text-teal">{selectedIds.size} selected</span>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0 || bulkBusy}
+            onClick={() => setBulkDeleteOpen(true)}
+            className="flex items-center gap-1.5 border border-brand-coral/50 px-2.5 py-1 text-brand-coral disabled:opacity-40"
+          >
+            <Trash2 size={12} /> delete
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0 || bulkBusy}
+            onClick={bulkExport}
+            className="flex items-center gap-1.5 border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            <Download size={12} /> export
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set(filtered.map((s) => s.id)))}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            select all ({filtered.length})
+          </button>
+        </div>
+      )}
 
       {!loading && scans.length > 0 && (
         <div className="flex flex-wrap items-center gap-4 border-b border-border/60 pb-4 font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
@@ -439,11 +542,16 @@ function LibraryView({
       {filtered.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((scan) => (
-            <article key={scan.id} className="clay group overflow-hidden transition-colors hover:border-teal/40">
+            <article
+              key={scan.id}
+              className={`clay group overflow-hidden transition-colors hover:border-teal/40 ${
+                selectMode && selectedIds.has(scan.id) ? 'border-teal ring-1 ring-teal' : ''
+              }`}
+            >
               <button
                 type="button"
-                onClick={() => setViewingScan(scan)}
-                disabled={!scan.model_url}
+                onClick={() => (selectMode ? toggleSelect(scan.id) : setViewingScan(scan))}
+                disabled={!selectMode && !scan.model_url}
                 className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-navy-deep/60 disabled:cursor-default"
               >
                 <div
@@ -459,6 +567,16 @@ function LibraryView({
                   <img src={scan.image_url} alt={scan.object_name ?? 'model'} className="relative h-full w-full object-cover" />
                 ) : (
                   <span className="relative text-xs text-muted-foreground">No preview</span>
+                )}
+                {selectMode && (
+                  <span
+                    className={`absolute left-3 top-3 flex size-5 items-center justify-center rounded border ${
+                      selectedIds.has(scan.id) ? 'border-teal bg-teal text-navy-deep' : 'border-white/50 bg-black/40'
+                    }`}
+                    aria-hidden
+                  >
+                    {selectedIds.has(scan.id) && <Check size={12} strokeWidth={3} />}
+                  </span>
                 )}
                 <span
                   className={`absolute right-3 top-3 border px-2 py-1 font-mono text-[9px] tracking-[0.25em] uppercase ${
@@ -577,6 +695,18 @@ function LibraryView({
         tone="destructive"
         busy={deleting}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmModal
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => !open && setBulkDeleteOpen(false)}
+        title={`Delete ${selectedIds.size} scan${selectedIds.size === 1 ? '' : 's'}?`}
+        description="Every model, photo, and measurement in the selection is removed for good — this can't be undone."
+        detail={selectedScans.map((s) => s.object_name ?? s.job_id).join(', ')}
+        confirmLabel="Delete"
+        tone="destructive"
+        busy={bulkBusy}
+        onConfirm={confirmBulkDelete}
       />
     </>
   )
