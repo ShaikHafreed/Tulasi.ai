@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Lock, Unlock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -102,6 +102,18 @@ export default function DimensionPanel({
     setDims((prev) => ({ ...prev, depth_mm: unitToMm(displayValue, unit) }))
   }
 
+  // Arrow-key nudge: ↑/↓ steps by 1 display unit, Shift+↑/↓ by 0.1 — routes
+  // through the SAME setWidth/setHeight/setDepth used by typing, so
+  // aspect-lock applies identically either way (native number-input arrow
+  // stepping bypasses that logic entirely, which is the bug this replaces).
+  function nudge(currentDisplayValue: number, event: KeyboardEvent<HTMLInputElement>, apply: (v: number) => void) {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    event.preventDefault()
+    const step = event.shiftKey ? 0.1 : 1
+    const delta = event.key === 'ArrowUp' ? step : -step
+    apply(Number((currentDisplayValue + delta).toFixed(3)))
+  }
+
   return (
     <Card className="w-full max-w-md gap-4 p-6">
       <div className="flex items-center justify-between">
@@ -126,6 +138,7 @@ export default function DimensionPanel({
             step={step}
             value={toDisplayValue(dims.width_mm, unit)}
             onChange={(event) => setWidth(event.target.valueAsNumber)}
+            onKeyDown={(event) => nudge(toDisplayValue(dims.width_mm, unit), event, setWidth)}
           />
         </div>
         <div className="grid gap-1.5">
@@ -137,6 +150,7 @@ export default function DimensionPanel({
             step={step}
             value={toDisplayValue(dims.height_mm, unit)}
             onChange={(event) => setHeight(event.target.valueAsNumber)}
+            onKeyDown={(event) => nudge(toDisplayValue(dims.height_mm, unit), event, setHeight)}
           />
         </div>
         <div className="grid gap-1.5">
@@ -153,9 +167,14 @@ export default function DimensionPanel({
             step={step}
             value={toDisplayValue(dims.depth_mm, unit)}
             onChange={(event) => setDepth(event.target.valueAsNumber)}
+            onKeyDown={(event) => nudge(toDisplayValue(dims.depth_mm, unit), event, setDepth)}
           />
         </div>
       </div>
+
+      <p className="-mt-1 font-mono text-[9px] tracking-[0.08em] text-muted-foreground/70 uppercase">
+        ↑↓ nudge ±1 · shift+↑↓ nudge ±0.1
+      </p>
 
       <div className="flex items-center gap-2.5">
         <Switch id="aspect-lock" checked={aspectLocked} onCheckedChange={setAspectLocked} />
