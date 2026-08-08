@@ -8,6 +8,59 @@ differentiator is dimensional accuracy via reference-object calibration
 (photograph next to a coin/card → real millimeters), not mesh-generation
 quality, which is already commoditized (Meshy, Tripo, Rodin).
 
+## Current status (audited 2026-07-28)
+
+Full-codebase audit — ran the backend test suite, read real file contents,
+traced real call chains. Legend: ✅ working / ⚠️ partial / ❌ missing /
+❓ needs manual check. Full detail in the audit conversation; this is the
+condensed truth. The prose sections below (pre-audit) describe what was
+*built*, which is mostly accurate — this section corrects where "built"
+doesn't mean "fully solid."
+
+**Real gaps found:**
+- ⚠️ **Calibration accuracy is untested against real photos.** All 8
+  `test_calibrate.py` tests run against synthetic `cv2`-drawn canvases, not
+  ruler-measured real photos — the test file's own docstring admits this.
+  Dimensional accuracy is the entire product differentiator ("Tulasi makes
+  it FIT right"); the ±5%/±8% tolerance claim has never been checked against
+  a real photo in CI.
+- ⚠️ **3D viewer has no explicit re-centering.** `ModelViewer.tsx`'s camera
+  auto-fit math is real and correct, but nothing calls `box.getCenter()` to
+  re-center the scene at the origin — OrbitControls' target quietly assumes
+  Meshy's GLB is already centered on its own local origin. Probably fine in
+  practice, never actually verified.
+- ⚠️ **Print-readiness validation (`printCheck.ts`) is two bounding-box
+  heuristics** (min feature size, aspect ratio), not real overhang/wall-
+  thickness mesh analysis, despite the "phase5" commit title implying more.
+- ⚠️ **Error handling is uneven.** The `{error_code, human_message,
+  suggested_action}` pattern is real and used in 10 files/~26 error codes,
+  but `assistant.py`/`character.py` have zero try/except around unexpected
+  failures (raw 500s leak through), and `scans.py`'s thumbnail-update path
+  silently swallows failures instead of surfacing them.
+- ⚠️ **Frontend has zero test coverage** — no test files, no runner
+  configured, no `test` script. Backend is the opposite: 58 real tests
+  across 13 files, all passing. This asymmetry is real, not perception.
+- ❓ **Supabase schema was not independently re-verified this pass** — the
+  MCP connection to the live project timed out twice. Code's assumptions
+  about the `scans`/`assistant_feedback` schema match what's documented
+  below, but that's code-assumed, not live-confirmed.
+- ❓ **Glove hardware** — firmware (`firmware/src/gestures.cpp`) and the
+  Web Bluetooth client (`gloveGesture.ts`) are both complete and mirror the
+  webcam gesture scheme exactly, but no physical glove has been assembled —
+  the hardware side is unverifiable from code.
+
+**Confirmed solid** (spot-checked, not just assumed): the webcam gesture
+scheme (1/2/5-finger, 3-finger genuinely removed, no dead code), the mug
+handle dev-mode regression assertion (real vertex math, `console.error`s
+loudly on violation), delete/rename/bulk-ops all keyed by scan id (not
+index — no stale-state risk), presentation mode's real Fullscreen API
+integration, the warm theme tokens (no leftover literal navy/teal hex
+values anywhere), slicer export's real per-axis mm scaling + bed-orientation
+transform, and the print/weight estimator's real `mesh.volume` (not
+bounding-box) calculation. Git history is genuine, iterative, 97 commits
+with real fix-up commits for real bugs found along the way — not
+scoped-and-abandoned.
+
 ## Actual current state — do not assume anything beyond this exists
 
 **Built and working:**
