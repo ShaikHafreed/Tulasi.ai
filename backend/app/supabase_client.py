@@ -25,6 +25,28 @@ def _decode_user_id(access_token: str) -> str:
     return payload["sub"]
 
 
+def verify_access_token(access_token: str):
+    """Cryptographically verifies a bearer token against Supabase's own Auth
+    server (GoTrue's /auth/v1/user) and returns the real user, or None if
+    it's invalid, expired, or forged.
+
+    `_decode_user_id` above is a blind base64 payload read with NO signature
+    check — fine for read-only convenience where a bad token just fails
+    later at the database via RLS, but not a substitute for actually
+    verifying identity before trusting it. This is that verification step —
+    delegated to Supabase itself rather than maintained locally, since it's
+    correct regardless of whether the project signs tokens with a shared
+    HS256 secret or newer asymmetric keys, with no extra secret to configure
+    or rotate here.
+    """
+    client = _anon_client()
+    try:
+        response = client.auth.get_user(access_token)
+    except Exception:
+        return None
+    return response.user if response else None
+
+
 def _client_as(access_token: str) -> Client:
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_PUBLISHABLE_KEY")

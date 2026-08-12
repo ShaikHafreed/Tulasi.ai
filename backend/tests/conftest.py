@@ -3,6 +3,7 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
+from app.auth import CurrentUser, get_current_user
 from app.main import app
 
 # Minimal 1x1 PNG, used as a stand-in "photo" upload in tests.
@@ -23,3 +24,16 @@ def client():
 @pytest.fixture
 def sample_image_bytes() -> bytes:
     return SAMPLE_PNG
+
+
+@pytest.fixture
+def authed_client(client):
+    # get_current_user now genuinely verifies the bearer token against
+    # Supabase's Auth server (see app/auth.py) — a bare "Bearer fake-token"
+    # string is correctly rejected with 401, so tests that only care about
+    # OTHER validation (bad content-type, empty name, etc.) need a real
+    # dependency override standing in for "a verified, signed-in user",
+    # not a magic header value.
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(id="test-user", access_token="fake-token")
+    yield client
+    del app.dependency_overrides[get_current_user]

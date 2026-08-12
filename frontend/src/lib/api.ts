@@ -43,6 +43,27 @@ async function authHeaders(): Promise<HeadersInit> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+// Every authenticated call goes through here instead of a bare fetch().
+// supabase-js already refreshes the session proactively on its own timer,
+// so most requests never hit this path — but a request can still land with
+// a token that expired in the gap between getSession() and the server
+// receiving it (or one invalidated by a sign-out in another tab). Rather
+// than surface that as a user-visible error, refresh the session once and
+// silently replay the exact same request — the caller never sees the 401.
+async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  for (const [key, value] of Object.entries(await authHeaders())) headers.set(key, value)
+
+  const response = await fetch(input, { ...init, headers })
+  if (response.status !== 401 || !supabase) return response
+
+  const { data, error } = await supabase.auth.refreshSession()
+  if (error || !data.session) return response // refresh itself failed — surface the original 401
+
+  headers.set('Authorization', `Bearer ${data.session.access_token}`)
+  return fetch(input, { ...init, headers })
+}
+
 // Suggests a crop box around the main object in a photo, so the user can
 // confirm what to model before generating.
 export async function detectSubject(file: File): Promise<SubjectBox> {
@@ -68,11 +89,7 @@ export async function uploadImages(files: File[]): Promise<GenerateAccepted> {
   // 1–4 photos under the same "images" field; the first is the primary view.
   for (const file of files) formData.append('images', file)
 
-  const response = await fetch('/api/generate', {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: formData,
-  })
+  const response = await authedFetch('/api/generate', { method: 'POST', body: formData })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)
@@ -87,11 +104,7 @@ export async function regenerateScan(jobId: string, files: File[]): Promise<Gene
   const formData = new FormData()
   for (const file of files) formData.append('images', file)
 
-  const response = await fetch(`/api/scans/${jobId}/regenerate`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: formData,
-  })
+  const response = await authedFetch(`/api/scans/${jobId}/regenerate`, { method: 'POST', body: formData })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)
@@ -141,9 +154,9 @@ export async function sendAssistantMessage(message: string, events: TulasiEvent[
 }
 
 export async function sendAssistantFeedback(message: string, rating: 'up' | 'down'): Promise<void> {
-  const response = await fetch('/api/assistant/feedback', {
+  const response = await authedFetch('/api/assistant/feedback', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, rating }),
   })
 
@@ -227,11 +240,7 @@ export async function uploadThumbnail(jobId: string, dataUrl: string): Promise<v
   const formData = new FormData()
   formData.append('image', dataUrlToBlob(dataUrl), 'thumbnail.jpg')
 
-  const response = await fetch(`/api/scans/${jobId}/thumbnail`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: formData,
-  })
+  const response = await authedFetch(`/api/scans/${jobId}/thumbnail`, { method: 'POST', body: formData })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)
@@ -239,19 +248,16 @@ export async function uploadThumbnail(jobId: string, dataUrl: string): Promise<v
 }
 
 export async function renameScan(jobId: string, objectName: string): Promise<void> {
-  const response = await fetch(`/api/scans/${jobId}`, {
+  const response = await authedFetch(`/api/scans/${jobId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ object_name: objectName }),
   })
   if (!response.ok) await parseErrorOrThrow(response)
 }
 
 export async function deleteScan(jobId: string): Promise<void> {
-  const response = await fetch(`/api/scans/${jobId}`, {
-    method: 'DELETE',
-    headers: await authHeaders(),
-  })
+  const response = await authedFetch(`/api/scans/${jobId}`, { method: 'DELETE' })
 
   if (!response.ok) {
     await parseErrorOrThrow(response)
@@ -259,20 +265,14 @@ export async function deleteScan(jobId: string): Promise<void> {
 }
 
 export async function enableShare(jobId: string): Promise<string> {
-  const response = await fetch(`/api/scans/${jobId}/share`, {
-    method: 'POST',
-    headers: await authHeaders(),
-  })
+  const response = await authedFetch(`/api/scans/${jobId}/share`, { method: 'POST' })
   if (!response.ok) await parseErrorOrThrow(response)
   const body = (await response.json()) as { slug: string }
   return body.slug
 }
 
 export async function disableShare(jobId: string): Promise<void> {
-  const response = await fetch(`/api/scans/${jobId}/share`, {
-    method: 'DELETE',
-    headers: await authHeaders(),
-  })
+  const response = await authedFetch(`/api/scans/${jobId}/share`, { method: 'DELETE' })
   if (!response.ok) await parseErrorOrThrow(response)
 }
 
