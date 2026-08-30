@@ -74,13 +74,39 @@ function Model({
   const boundingRadiusRaw = useRef(1)
   const visibleHalfWidth = useRef(Infinity)
   const visibleHalfHeight = useRef(Infinity)
+  // The mesh's own bounding-box center, in its raw (unscaled) local space —
+  // Meshy's output isn't guaranteed to be centered on its own local origin.
+  // panOffset is the accumulated gesture-pan translation in world units,
+  // tracked separately so a scale change (resize) never has to guess at or
+  // wipe out whatever pan the user already applied.
+  const centerLocal = useRef(new THREE.Vector3())
+  const panOffset = useRef(new THREE.Vector3())
+
+  // Single place that derives scene.position from the two independent
+  // things that affect it: the centering correction (scale-dependent, so it
+  // must be recomputed on every resize) and the accumulated pan (scale-
+  // independent, world units). Previously scale changes and pan both wrote
+  // scene.position directly with no centering term at all — the viewer only
+  // "looked" centered when a given Meshy mesh's own local origin happened
+  // to already sit at its bounding-box center, which isn't guaranteed.
+  function applyTransform() {
+    const s = baseScale.current * scale
+    scene.scale.setScalar(s)
+    scene.position.set(
+      panOffset.current.x - centerLocal.current.x * s,
+      panOffset.current.y - centerLocal.current.y * s,
+      panOffset.current.z - centerLocal.current.z * s,
+    )
+  }
 
   useEffect(() => {
     const box = new THREE.Box3().setFromObject(scene)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z) || 1
     baseScale.current = 2 / maxDim
-    scene.scale.setScalar(baseScale.current * scale)
+    box.getCenter(centerLocal.current)
+    panOffset.current.set(0, 0, 0)
+    applyTransform()
 
     // Fit the camera to the real post-scale bounding sphere once, on the
     // model's first load — not on every scale change, or a gesture-driven
@@ -132,8 +158,9 @@ function Model({
   }, [scene, invalidate])
 
   useEffect(() => {
-    scene.scale.setScalar(baseScale.current * scale)
+    applyTransform()
     invalidate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale, scene, invalidate])
 
   useEffect(() => {
@@ -165,9 +192,11 @@ function Model({
     const boundX = Math.max((visibleHalfWidth.current - effectiveRadius) * PAN_SAFETY_FACTOR, 0)
     const boundY = Math.max((visibleHalfHeight.current - effectiveRadius) * PAN_SAFETY_FACTOR, 0)
 
-    scene.position.x = THREE.MathUtils.clamp(scene.position.x + Math.cos(rad) * step, -boundX, boundX)
-    scene.position.y = THREE.MathUtils.clamp(scene.position.y + Math.sin(rad) * step, -boundY, boundY)
+    panOffset.current.x = THREE.MathUtils.clamp(panOffset.current.x + Math.cos(rad) * step, -boundX, boundX)
+    panOffset.current.y = THREE.MathUtils.clamp(panOffset.current.y + Math.sin(rad) * step, -boundY, boundY)
+    applyTransform()
     invalidate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panTrigger, scene, invalidate, scale])
 
   useEffect(() => {
