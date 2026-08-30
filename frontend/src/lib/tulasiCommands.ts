@@ -6,6 +6,10 @@ export type CommandName =
   | 'exportModel'
   | 'addReferenceHint'
   | 'togglePresentation'
+  | 'cameraFront'
+  | 'cameraTop'
+  | 'cameraSide'
+  | 'cameraIso'
 
 export interface SetDimensionsParams {
   width_mm: number
@@ -47,6 +51,10 @@ type CommandParams = {
   exportModel: ExportModelParams
   addReferenceHint: AddReferenceHintParams
   togglePresentation: Record<string, never>
+  cameraFront: Record<string, never>
+  cameraTop:   Record<string, never>
+  cameraSide:  Record<string, never>
+  cameraIso:   Record<string, never>
 }
 
 type CommandHandlers = {

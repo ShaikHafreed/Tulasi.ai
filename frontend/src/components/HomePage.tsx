@@ -79,6 +79,78 @@ const UNKNOWN_ERROR: ErrorDetail = {
   suggested_action: 'Check the backend is running and try again.',
 }
 
+function triggerConfetti() {
+  if (typeof window === 'undefined') return
+  const canvas = document.getElementById('confetti-canvas') as HTMLCanvasElement | null
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+
+  const colors = ['#b34f2a', '#476d5c', '#faf6f0', '#c96f4a', '#a89880']
+  const particles: Array<{
+    x: number
+    y: number
+    w: number
+    h: number
+    vx: number
+    vy: number
+    color: string
+    rotation: number
+    vRot: number
+    alpha: number
+  }> = []
+
+  for (let i = 0; i < 70; i++) {
+    particles.push({
+      x: canvas.width / 2 + (Math.random() * 200 - 100),
+      y: canvas.height / 3,
+      w: Math.random() * 8 + 4,
+      h: Math.random() * 10 + 6,
+      vx: (Math.random() - 0.5) * 12,
+      vy: Math.random() * -12 - 4,
+      color: colors[Math.floor(Math.random() * colors.length)] ?? '#b34f2a',
+      rotation: Math.random() * 360,
+      vRot: (Math.random() - 0.5) * 10,
+      alpha: 1,
+    })
+  }
+
+  const startTime = performance.now()
+
+  function render(now: number) {
+    const elapsed = now - startTime
+    if (!ctx) return
+    if (elapsed > 2500) {
+      ctx.clearRect(0, 0, canvas!.width, canvas!.height)
+      return
+    }
+    ctx.clearRect(0, 0, canvas!.width, canvas!.height)
+
+    for (const p of particles) {
+      p.x += p.vx
+      p.y += p.vy
+      p.vy += 0.35
+      p.rotation += p.vRot
+      p.alpha = Math.max(0, 1 - elapsed / 2500)
+
+      ctx.save()
+      ctx.globalAlpha = p.alpha
+      ctx.translate(p.x, p.y)
+      ctx.rotate((p.rotation * Math.PI) / 180)
+      ctx.fillStyle = p.color
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h)
+      ctx.restore()
+    }
+
+    requestAnimationFrame(render)
+  }
+
+  requestAnimationFrame(render)
+}
+
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return <p className="font-display text-[11px] tracking-[0.16em] text-primary uppercase">{children}</p>
 }
@@ -1087,6 +1159,7 @@ function ScanView({
             setPhase('done')
             toast.success('Scan saved to your library')
             notifyGenerationComplete()
+            triggerConfetti()
             onScanSaved()
           } else if (record.status === 'failed') {
             clearInterval(pollHandle.current!)
@@ -1864,6 +1937,8 @@ export default function HomePage({ session }: { session: Session }) {
             'radial-gradient(1200px 600px at 20% -10%, rgba(179,79,42,0.06), transparent 60%), radial-gradient(900px 500px at 100% 110%, rgba(71,109,92,0.06), transparent 60%)',
         }}
       />
+      {/* Canvas confetti overlay for successful scan completion */}
+      <canvas id="confetti-canvas" className="pointer-events-none fixed inset-0 z-50 h-full w-full" />
       <Sidebar
         activeView={view}
         onSelectView={setView}

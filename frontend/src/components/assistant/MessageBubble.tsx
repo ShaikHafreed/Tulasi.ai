@@ -12,6 +12,8 @@ export interface ChatMessage {
   text: string
   status?: string
   sources?: Source[]
+  /** When true the bubble renders a three-dot typing animation instead of text */
+  typing?: boolean
 }
 
 export default function MessageBubble({ message }: { message: ChatMessage }) {
@@ -48,9 +50,22 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
           isUser ? 'bg-primary/15 text-foreground' : 'bg-secondary text-foreground',
         )}
       >
-        {message.text}
+        {message.typing ? (
+          /* Three-dot typing indicator — staggered bounce, respects reduced-motion */
+          <span className="flex items-center gap-1 py-0.5" aria-label="Assistant is typing">
+            {([0, 150, 300] as const).map((delay) => (
+              <span
+                key={delay}
+                className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60 motion-safe:animate-bounce"
+                style={{ animationDelay: `${delay}ms`, animationDuration: '900ms' }}
+              />
+            ))}
+          </span>
+        ) : (
+          message.text
+        )}
       </div>
-      {!isUser && !!message.sources?.length && (
+      {!isUser && !message.typing && !!message.sources?.length && (
         <div className="flex max-w-[85%] flex-wrap gap-1.5 px-1">
           {message.sources.map((source) => (
             <a
@@ -69,7 +84,7 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       )}
       {message.status && <p className="font-display text-[11px] text-primary">{message.status}</p>}
-      {!isUser && (
+      {!isUser && !message.typing && (
         <div className="flex gap-1 px-1">
           {getVoiceEnabled() && (
             <button

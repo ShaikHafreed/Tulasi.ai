@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageCircle, Radio, Send, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, MessageCircle, Radio, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import { SectionHeader } from '../tulasi/Readout'
 import { cn } from '@/lib/utils'
 import { playSpokenText } from '@/lib/voicePlayback'
 import { getVoiceEnabled } from '@/lib/voicePreference'
+import { useIsMobile } from '@/lib/useIsMobile'
 import type { ProposedAction } from '@/lib/types'
 import type { PrintCheckResult } from '@/lib/tulasiCommands'
 import MessageBubble, { type ChatMessage } from './MessageBubble'
@@ -30,7 +31,14 @@ const WELCOME: ChatMessage = {
   text: "I can resize your scanned model to a target measurement, check it against print heuristics, rotate the view, or export it. What are you trying to do?",
 }
 
-const SUGGESTED_PROMPT = 'What have I done so far?'
+const SUGGESTED_CHIPS = [
+  'Make it 100mm wide',
+  "Check if it's print-ready",
+  'Rotate 90° on the Y axis',
+  'Export as STL',
+  'What can you do?',
+] as const
+
 
 // Matches backend/app/services/assistant.py's LIVE_OBSERVE_PREFIX — an
 // internal marker so the mock/real assistant can tell "the user typed this"
@@ -82,15 +90,29 @@ function loadPanelSize(): { width: number; height: number } {
   }
 }
 
-export default function ChatPanel({ embedded }: { embedded?: boolean }) {
+export default function ChatPanel({
+  embedded,
+  dimensions,
+}: {
+  embedded?: boolean
+  /** Current model dimensions in mm — displayed as context in the panel header */
+  dimensions?: { width_mm: number; height_mm: number; depth_mm: number } | null
+}) {
   const [open, setOpen] = useState(false)
+  // Collapse the body of the chat panel without closing it entirely
+  const [collapsed, setCollapsed] = useState(false)
+  // Count messages received while panel is collapsed so we can show an unread dot
+  const [unreadCount, setUnreadCount] = useState(0)
   const [recentEvents, setRecentEvents] = useState<TulasiEvent[]>(getRecentEvents)
   const [liveMode, setLiveMode] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
   const [pendingAction, setPendingAction] = useState<{ forMessageId: string; action: ProposedAction } | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  // Hides suggestion chips after the user's first real message
+  const [hasUserSentMessage, setHasUserSentMessage] = useState(false)
   const [panelSize, setPanelSize] = useState(loadPanelSize)
+  const isMobile = useIsMobile()
   const scrollRef = useRef<HTMLDivElement>(null)
   const dimensionsDebounce = useRef<number | null>(null)
   const resizeStart = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
@@ -137,15 +159,23 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
     async (text: string, { showUserBubble }: { showUserBubble: boolean }) => {
       if (showUserBubble) {
         setMessages((prev) => [...prev, { id: nextId(), role: 'user', text }])
+        setHasUserSentMessage(true)
       }
+      // Inject typing indicator bubble — removed as soon as the real reply arrives
+      const typingId = nextId()
       setSending(true)
+      setMessages((prev) => [...prev, { id: typingId, role: 'assistant', text: '', typing: true }])
       scrollToBottom()
 
       try {
         const { reply, executed, pendingConfirm, sources } = await runAssistantTurn(text)
+        // Remove typing bubble before adding real content
+        setMessages((prev) => prev.filter((m) => m.id !== typingId))
         if (reply) {
           const replyId = nextId()
           setMessages((prev) => [...prev, { id: replyId, role: 'assistant', text: reply, sources }])
+          // Increment unread badge if panel is currently collapsed
+          setUnreadCount((n) => (collapsed ? n + 1 : 0))
           speak(reply)
           for (const action of pendingConfirm) {
             setPendingAction({ forMessageId: replyId, action })
@@ -158,6 +188,8 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
           ])
         }
       } catch {
+        // Remove typing bubble on error before showing error message
+        setMessages((prev) => prev.filter((m) => m.id !== typingId))
         if (showUserBubble) {
           setMessages((prev) => [
             ...prev,
@@ -169,7 +201,7 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
         scrollToBottom()
       }
     },
-    [scrollToBottom],
+    [scrollToBottom, collapsed],
   )
 
   // Real recent-activity feed for the embedded (full-page) layout — the
@@ -265,9 +297,12 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
       className={
         embedded
           ? 'liquid-glass relative flex h-[min(720px,calc(100vh-260px))] w-full flex-col gap-0 overflow-hidden p-0'
-          : 'liquid-glass fixed right-4 bottom-20 z-20 flex flex-col gap-0 overflow-hidden p-0 sm:right-6 md:bottom-6'
+          : 'liquid-glass fixed inset-x-0 bottom-0 z-50 flex flex-col gap-0 overflow-hidden p-0 rounded-b-none sm:inset-auto sm:right-6 sm:bottom-6 sm:z-20 sm:rounded-xl max-sm:w-full max-sm:max-h-[85vh]'
       }
-      style={embedded ? undefined : { width: panelSize.width, height: panelSize.height }}
+      style={embedded ? undefined : {
+        width: isMobile ? '100%' : panelSize.width,
+        height: collapsed ? 'auto' : (isMobile ? '80vh' : panelSize.height),
+      }}
     >
       {!embedded && (
         <div
@@ -278,6 +313,8 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
           <div className="absolute top-1.5 left-1.5 size-2 rounded-full border-t border-l border-muted-foreground/50" />
         </div>
       )}
+
+      {/* Header row */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="font-display text-xs tracking-[0.1em] text-primary uppercase">Tulasi assistant</p>
@@ -288,23 +325,65 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
             </span>
           )}
         </div>
-        {!embedded && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Close assistant"
-            >
-              <X size={16} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Close</TooltipContent>
-        </Tooltip>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Collapse toggle — non-embedded only */}
+          {!embedded && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollapsed((c) => !c)
+                    setUnreadCount(0)
+                  }}
+                  className="relative rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={collapsed ? 'Expand assistant' : 'Collapse assistant'}
+                  aria-expanded={!collapsed}
+                >
+                  {collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  {/* Unread dot — shown only while collapsed and new messages arrived */}
+                  {collapsed && unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-primary">
+                      <span className="font-mono text-[8px] leading-none text-primary-foreground">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    </span>
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{collapsed ? 'Expand' : 'Collapse'}</TooltipContent>
+            </Tooltip>
+          )}
+          {!embedded && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="Close assistant"
+                >
+                  <X size={15} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Close</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
 
+      {/* Model context badge — shows when a model is loaded */}
+      {dimensions && !collapsed && (
+        <div className="border-b border-border bg-muted/40 px-4 py-1.5">
+          <p className="font-mono text-[10px] tracking-[0.06em] text-muted-foreground">
+            📦 Model loaded · {Math.round(dimensions.width_mm)} × {Math.round(dimensions.height_mm)} × {Math.round(dimensions.depth_mm)} mm
+          </p>
+        </div>
+      )}
+
+      {/* Live mode toggle + collapsible body */}
+      {!collapsed && (
+        <>
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
         <span className="text-xs text-muted-foreground">Watch my actions live</span>
         <Tooltip>
@@ -325,6 +404,30 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
             <MessageBubble key={message.id} message={message} />
           ),
         )}
+
+        {/* Suggestion chips — visible only before the first user message */}
+        {!hasUserSentMessage && (
+          <div className="flex flex-wrap gap-1.5 pt-1" role="list" aria-label="Suggested prompts">
+            {SUGGESTED_CHIPS.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                role="listitem"
+                disabled={sending}
+                onClick={() => runTurn(chip, { showUserBubble: true })}
+                className={cn(
+                  'rounded-full border border-primary/25 bg-primary/8 px-3 py-1 text-[11px] text-primary',
+                  'transition-colors hover:border-primary/50 hover:bg-primary/15',
+                  'disabled:opacity-40 disabled:cursor-not-allowed',
+                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring',
+                )}
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        )}
+
         {pendingAction && (
           <ActionConfirmCard
             action={pendingAction.action}
@@ -332,20 +435,6 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
             onDismiss={() => setPendingAction(null)}
           />
         )}
-      </div>
-
-      <div className="border-t border-border px-3 pt-2.5">
-        <button
-          type="button"
-          onClick={() => runTurn(SUGGESTED_PROMPT, { showUserBubble: true })}
-          disabled={sending}
-          className={cn(
-            'rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground',
-            'transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50',
-          )}
-        >
-          {SUGGESTED_PROMPT}
-        </button>
       </div>
 
       <div className="flex items-center gap-2 p-3">
@@ -360,6 +449,8 @@ export default function ChatPanel({ embedded }: { embedded?: boolean }) {
           <Send size={16} />
         </Button>
       </div>
+      </>
+      )}
     </Card>
   )
 
