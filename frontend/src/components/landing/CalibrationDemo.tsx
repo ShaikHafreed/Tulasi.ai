@@ -28,8 +28,8 @@ export function CalibrationDemo() {
     <div id="calibration" ref={ref} className="mx-auto max-w-7xl px-6 py-32 md:py-48">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
         <div className="lg:col-span-4 order-2 lg:order-1">
-          <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">03 · signature / calibration</div>
-          <h2 className="mt-4 font-display text-3xl md:text-4xl leading-tight">
+          <div className="font-mono text-xs font-medium tracking-[0.3em] text-teal uppercase">03 · signature / calibration</div>
+          <h2 className="mt-4 font-display text-4xl md:text-6xl lg:text-7xl leading-[1.02]">
             One reference object. <br />
             <span className="text-teal">Every</span> measurement true.
           </h2>

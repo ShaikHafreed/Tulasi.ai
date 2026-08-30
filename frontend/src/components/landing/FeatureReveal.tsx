@@ -55,8 +55,8 @@ export function FeatureReveal() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-32 md:py-48">
       <div className="max-w-2xl">
-        <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">04 · capabilities</div>
-        <h2 className="mt-4 font-display text-3xl md:text-5xl leading-tight">
+        <div className="font-mono text-xs font-medium tracking-[0.3em] text-teal uppercase">04 · capabilities</div>
+        <h2 className="mt-4 font-display text-4xl md:text-6xl lg:text-7xl leading-[1.02]">
           The things <span className="italic text-muted-foreground">under</span> the pretty picture.
         </h2>
       </div>

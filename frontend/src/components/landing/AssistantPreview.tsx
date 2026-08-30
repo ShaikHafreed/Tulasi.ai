@@ -19,8 +19,8 @@ export function AssistantPreview() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-32 md:py-48">
       <div className="max-w-2xl mx-auto text-center">
-        <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">06 · assistant</div>
-        <h2 className="mt-4 font-display text-3xl md:text-5xl leading-tight">
+        <div className="font-mono text-xs font-medium tracking-[0.3em] text-teal uppercase">06 · assistant</div>
+        <h2 className="mt-4 font-display text-4xl md:text-6xl lg:text-7xl leading-[1.02]">
           Speak in intent. <br />
           <span className="italic text-muted-foreground">It edits the geometry.</span>
         </h2>

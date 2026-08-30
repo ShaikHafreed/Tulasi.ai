@@ -24,8 +24,8 @@ export function ComparisonSplit() {
   return (
     <div ref={ref} className="mx-auto max-w-7xl px-6 py-32 md:py-48">
       <div className="mx-auto max-w-2xl text-center">
-        <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">02 · fit_check</div>
-        <h2 className="mt-4 font-display text-3xl md:text-5xl leading-tight">
+        <div className="font-mono text-xs font-medium tracking-[0.3em] text-teal uppercase">02 · fit_check</div>
+        <h2 className="mt-4 font-display text-4xl md:text-6xl lg:text-7xl leading-[1.02]">
           Pretty renders lie. <span className="text-muted-foreground italic">Dimensions don't.</span>
         </h2>
         <p className="mt-4 text-sm md:text-base text-muted-foreground">

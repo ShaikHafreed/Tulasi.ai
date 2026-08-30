@@ -7,7 +7,7 @@ export function ClosingCTA({ onRequestAccess }: { onRequestAccess: () => void })
   return (
     <div id="cta" className="relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-6 py-32 md:py-48 text-center">
-        <div className="font-mono text-[10px] tracking-[0.3em] text-teal uppercase">07 · begin</div>
+        <div className="font-mono text-xs font-medium tracking-[0.3em] text-teal uppercase">07 · begin</div>
 
         <div className="mt-10 flex justify-center">
           <motion.div
