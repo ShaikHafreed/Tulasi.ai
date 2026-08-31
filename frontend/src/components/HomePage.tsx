@@ -61,6 +61,8 @@ import {
 import type { ErrorDetail, JobRecord, Scan } from '../lib/types'
 import { MAX_ASPECT_FOR_STABILITY, MIN_PRINTABLE_MM, printCheck } from '../lib/printCheck'
 import { dateRangeToDays, getLibraryPrefs, setLibraryPrefs, type DateRangeFilter, type LibrarySort, type MeasuredFilter } from '../lib/libraryPrefs'
+import { getGuidedTourCompleted, setGuidedTourCompleted } from '../lib/guidedTour'
+import GuidedTour, { type TourStep } from './tulasi/GuidedTour'
 import { notifyGenerationComplete, requestNotificationPermission } from '../lib/notifications'
 
 const POLL_INTERVAL_MS = 1500
@@ -72,6 +74,46 @@ const POLL_INTERVAL_MS = 1500
 // prompt. Session-scoped (not localStorage) since it's just "resume what
 // this tab was doing," not something that should follow the user forever.
 const ACTIVE_JOB_STORAGE_KEY = 'tulasi_active_scan_job_id'
+
+// 7-step tour targeting real, always-mounted elements (Sidebar's nav is
+// visible regardless of active tab), so no cross-page navigation/waiting
+// is needed — the tour starts on the default 'dashboard' view already.
+const TOUR_STEPS: TourStep[] = [
+  {
+    title: 'Welcome to Tulasi 👋',
+    description:
+      "Photograph an object next to a coin or card and Tulasi turns it into a 3D model with real millimeter dimensions. Let's take a 60-second tour.",
+  },
+  {
+    title: 'Your dashboard',
+    description: 'Your most recent model and its measured dimensions live here, with a first-steps checklist below.',
+    target: 'dashboard-home',
+  },
+  {
+    title: 'Start a scan',
+    description: 'Upload 1-4 photos of an object — include a coin or card in frame for real-world calibration.',
+    target: 'nav-scan',
+  },
+  {
+    title: 'Your library',
+    description: 'Every scan you generate is saved here — search, filter, rename, export, or share it.',
+    target: 'nav-library',
+  },
+  {
+    title: 'Ask the assistant',
+    description: 'Tell it what you need in plain English — resize, rotate, print-check, or export.',
+    target: 'nav-assistant',
+  },
+  {
+    title: 'Settings',
+    description: 'Set your preferred units, enable gesture control, and manage your account here.',
+    target: 'nav-settings',
+  },
+  {
+    title: "You're all set",
+    description: 'Replay this tour anytime from Settings → Workspace.',
+  },
+]
 
 const UNKNOWN_ERROR: ErrorDetail = {
   error_code: 'unknown_error',
@@ -198,7 +240,9 @@ function DashboardHome({
         }
       />
 
-      <OnboardingChecklist hasScans={(scanCount ?? 0) > 0} onGoToScan={onGoToScan} />
+      <div data-tour="dashboard-home">
+        <OnboardingChecklist hasScans={(scanCount ?? 0) > 0} onGoToScan={onGoToScan} />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Active (most-recent) model — real data */}
@@ -1692,11 +1736,13 @@ function SettingsView({
   onSignOut,
   gestureMode,
   onSelectGestureMode,
+  onRestartTour,
 }: {
   session: Session
   onSignOut: () => void
   gestureMode: GestureMode
   onSelectGestureMode: (mode: GestureMode) => void
+  onRestartTour: () => void
 }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(getVoiceEnabled())
   const [autoApply, setAutoApplyState] = useState(getAutoApplyReversible())
@@ -1818,7 +1864,7 @@ function SettingsView({
                   }}
                 />
               </div>
-              <div className="flex items-center justify-between pt-4">
+              <div className="flex items-center justify-between border-b border-border/50 py-4">
                 <div className="max-w-md">
                   <div className="text-sm">Auto-apply reversible edits</div>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -1833,6 +1879,17 @@ function SettingsView({
                     setAutoApplyReversible(next)
                   }}
                 />
+              </div>
+              <div className="flex items-center justify-between pt-4">
+                <div className="max-w-md">
+                  <div className="text-sm">Guided tour</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Replay the quick tour of the dashboard, scan, library, and assistant.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={onRestartTour}>
+                  Take the quick guide again
+                </Button>
               </div>
             </SettingsPanel>
           </div>
@@ -1869,6 +1926,15 @@ export default function HomePage({ session }: { session: Session }) {
   // mount would miss a toggle flipped from Settings without a remount.
   const [gestureEnabled, setGestureEnabled] = useState(getWebcamGestureEnabled())
   const [gloveEnabled, setGloveEnabled] = useState(getGloveGestureEnabled())
+  const [tourActive, setTourActive] = useState(false)
+
+  // Auto-run only for a genuinely new user (zero scans) who hasn't seen or
+  // dismissed it before — never re-triggered on later visits.
+  useEffect(() => {
+    if (!scansLoading && scans.length === 0 && !getGuidedTourCompleted()) {
+      setTourActive(true)
+    }
+  }, [scansLoading, scans.length])
 
   // Dark-first, matching the ported design — ensure no stale light class.
   useEffect(() => {
@@ -1976,11 +2042,28 @@ export default function HomePage({ session }: { session: Session }) {
             onSignOut={() => supabase?.auth.signOut()}
             gestureMode={gestureMode}
             onSelectGestureMode={selectGestureMode}
+            onRestartTour={() => {
+              setView('dashboard')
+              setTourActive(true)
+            }}
           />
         </div>
       </main>
       <ChatPanel embedded={view === 'assistant'} />
       <CommandPalette onNavigate={setView} onToggleGesture={toggleGesture} gestureEnabled={gestureEnabled} />
+      {tourActive && (
+        <GuidedTour
+          steps={TOUR_STEPS}
+          onFinish={() => {
+            setGuidedTourCompleted()
+            setTourActive(false)
+          }}
+          onSkip={() => {
+            setGuidedTourCompleted()
+            setTourActive(false)
+          }}
+        />
+      )}
     </div>
   )
 }

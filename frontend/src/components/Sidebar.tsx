@@ -74,6 +74,7 @@ export default function Sidebar({
                   if (el) itemRefs.current.set(id, el)
                 }}
                 type="button"
+                data-tour={`nav-${id}`}
                 onClick={() => onSelectView(id)}
                 onMouseEnter={() => moveIndicatorTo(id)}
                 className={`relative z-[1] flex h-8 items-center gap-2 px-3 font-mono text-[10px] tracking-[0.25em] uppercase transition-colors ${
@@ -116,6 +117,7 @@ export default function Sidebar({
               <li key={id}>
                 <button
                   type="button"
+                  data-tour={`nav-${id}`}
                   onClick={() => onSelectView(id)}
                   aria-current={active ? 'page' : undefined}
                   className={`flex h-14 min-h-11 w-full flex-col items-center justify-center gap-0.5 text-[10px] tracking-wide transition-colors active:bg-teal/[0.06] ${
